@@ -1,0 +1,14 @@
+{
+  "name": "@en-place/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@en-place/contracts": "workspace:*"
+  }
+}

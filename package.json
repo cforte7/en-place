@@ -1,0 +1,20 @@
+{
+  "name": "en-place",
+  "private": true,
+  "workspaces": [
+    "apps/backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "bun --cwd apps/backend run dev",
+    "check:typescript": "bun run --filter '*' typecheck",
+    "check:swift": "xcodebuild -project apps/macos/EnPlace.xcodeproj -scheme EnPlace -configuration Debug build",
+    "check": "bun run check:typescript && bun run check:swift",
+    "db:up": "docker compose -f infra/compose.yaml up -d postgres",
+    "db:down": "docker compose -f infra/compose.yaml down"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.23",
+    "typescript": "^5.9.2"
+  }
+}
