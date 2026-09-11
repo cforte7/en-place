@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "docker compose -f infra/compose.yaml up -d --wait postgres && bun run dev:backend",
     "dev:backend": "bun run --env-file=../../.env --cwd apps/backend dev",
     "check:typescript": "bun run --filter '*' typecheck",
     "check:swift": "xcodebuild -project apps/macos/EnPlace.xcodeproj -scheme EnPlace -configuration Debug build",

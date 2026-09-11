@@ -14,8 +14,9 @@ From the repository root:
 ```sh
 cp .env.example .env
 bun install
-bun run db:up
+bun run dev
 ```
+`bun run dev` starts PostgreSQL, waits for it to become healthy, and then starts the backend in watch mode at `http://localhost:3000`. Pressing Ctrl-C stops the backend; PostgreSQL remains available for the next run.
 
 The default local database is available at:
 
@@ -49,6 +50,7 @@ Run these commands from the repository root.
 
 | Command                    | Purpose                                     |
 | -------------------------- | ------------------------------------------- |
+| `bun run dev`              | Start PostgreSQL and the backend            |
 | `bun run db:up`            | Start local PostgreSQL                      |
 | `bun run db:down`          | Stop local PostgreSQL without deleting data |
 | `bun run db:generate`      | Generate a migration from schema changes    |
