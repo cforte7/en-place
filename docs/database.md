@@ -107,6 +107,7 @@ Do not edit a migration after it has been applied. Create a follow-up migration 
 ## Environment variables
 
 The database configuration comes from the root `.env` file.
+The root database scripts explicitly load this file before running Drizzle from `apps/backend`.
 
 | Variable            | Default development value                                | Purpose                               |
 | ------------------- | -------------------------------------------------------- | ------------------------------------- |

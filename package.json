@@ -7,16 +7,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:backend": "bun run --cwd apps/backend dev",
+    "dev:backend": "bun run --env-file=../../.env --cwd apps/backend dev",
     "check:typescript": "bun run --filter '*' typecheck",
     "check:swift": "xcodebuild -project apps/macos/EnPlace.xcodeproj -scheme EnPlace -configuration Debug build",
     "check": "bun run check:typescript && bun run check:swift",
     "db:up": "docker compose -f infra/compose.yaml up -d postgres",
     "db:down": "docker compose -f infra/compose.yaml down",
-    "db:generate": "bun run --cwd apps/backend db:generate",
-    "db:migrate": "bun run --cwd apps/backend db:migrate",
-    "db:check": "bun run --cwd apps/backend db:check",
-    "db:studio": "bun run --cwd apps/backend db:studio"
+    "db:generate": "bun run --bun --env-file=../../.env --cwd apps/backend db:generate",
+    "db:migrate": "bun run --bun --env-file=../../.env --cwd apps/backend db:migrate",
+    "db:check": "bun run --bun --env-file=../../.env --cwd apps/backend db:check",
+    "db:studio": "bun run --bun --env-file=../../.env --cwd apps/backend db:studio"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
