@@ -7,6 +7,8 @@ import { createRoute, type RouteHandler } from "@hono/zod-openapi";
 
 import { database } from "../../database";
 import { users } from "../../database/schema";
+import type { AppEnvironment } from "../../http/request-logging";
+import { usersLogger } from "../../observability/logging";
 
 export const createUserRoute = createRoute({
   method: "post",
@@ -57,9 +59,10 @@ export const createUserRoute = createRoute({
   },
 });
 
-export const createUserHandler: RouteHandler<typeof createUserRoute> = async (
-  context,
-) => {
+export const createUserHandler: RouteHandler<
+  typeof createUserRoute,
+  AppEnvironment
+> = async (context) => {
   const input = context.req.valid("json");
   const passwordHash = await Bun.password.hash(input.password, {
     algorithm: "argon2id",
@@ -97,6 +100,12 @@ export const createUserHandler: RouteHandler<typeof createUserRoute> = async (
       409,
     );
   }
+
+  usersLogger.info("Created user {userId}", {
+    event: "user.created",
+    userId: user.id,
+    requestId: context.get("requestId"),
+  });
 
   return context.json(
     {

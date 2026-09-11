@@ -3,8 +3,14 @@ import {
   type ServiceHealth,
 } from "@en-place/contracts";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import { requestId } from "hono/request-id";
 
+import {
+  requestLogging,
+  type AppEnvironment,
+} from "./http/request-logging";
 import { createUserHandler, createUserRoute } from "./modules/users/routes";
+import { httpLogger } from "./observability/logging";
 
 const health = {
   service: "en-place-backend",
@@ -26,7 +32,7 @@ const healthRoute = createRoute({
   },
 });
 
-export const app = new OpenAPIHono({
+export const app = new OpenAPIHono<AppEnvironment>({
   defaultHook: (result, context) => {
     if (!result.success) {
       return context.json(
@@ -41,6 +47,8 @@ export const app = new OpenAPIHono({
     }
   },
 });
+app.use("*", requestId({ limitLength: 128 }));
+app.use("*", requestLogging);
 
 app.openapi(healthRoute, (context) => context.json(health, 200));
 app.openapi(createUserRoute, createUserHandler);
@@ -66,7 +74,13 @@ app.notFound((context) =>
 );
 
 app.onError((error, context) => {
-  console.error(error);
+  httpLogger.error("Unhandled request error", {
+    event: "http.request.failed",
+    requestId: context.get("requestId"),
+    method: context.req.method,
+    path: context.req.path,
+    error,
+  });
 
   return context.json(
     {

@@ -1,4 +1,9 @@
 import { app } from "./app";
+import {
+  applicationLogger,
+  configureLogging,
+} from "./observability/logging";
+await configureLogging();
 
 const port = Number(Bun.env.PORT ?? 3000);
 
@@ -7,4 +12,8 @@ const server = Bun.serve({
   fetch: app.fetch,
 });
 
-console.log(`Backend listening on ${server.url}`);
+applicationLogger.info("Backend listening on {url}", {
+  event: "application.started",
+  url: server.url.toString(),
+  port: server.port,
+});

@@ -59,3 +59,13 @@ Never use `drizzle-kit push` for shared or persistent databases; it bypasses the
 - Use `timestamp with time zone` for persisted instants.
 - Use transactions for writes
 - Use raw SQL only when Drizzle cannot express the required PostgreSQL behavior; keep such SQL parameterized and localized to the database boundary.
+
+## Logging
+
+Human-facing logging instructions live in `docs/logging.md`.
+
+- Use LogTape loggers from `apps/backend/src/observability/logging.ts`; never add ad hoc `console` calls.
+- Log structured events with stable `event` names and IDs. The HTTP middleware owns request completion logs.
+- Include `requestId` when logging work performed for a request.
+- Never log passwords, hashes, tokens, authorization headers, cookies, request bodies, connection strings, or raw email addresses.
+- Write logs only to stdout/stderr. Use `LOG_LEVEL` for verbosity and `NODE_ENV=production` for JSON Lines output.
