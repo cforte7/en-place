@@ -6,9 +6,17 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:check": "drizzle-kit check",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@en-place/contracts": "workspace:*"
+    "@en-place/contracts": "workspace:*",
+    "drizzle-orm": "^1.0.0-rc.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^1.0.0-rc.4"
   }
 }

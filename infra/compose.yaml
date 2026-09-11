@@ -2,15 +2,15 @@ name: en-place
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-en_place}
       POSTGRES_USER: ${POSTGRES_USER:-en_place}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-en_place}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
