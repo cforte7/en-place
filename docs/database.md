@@ -1,8 +1,6 @@
-# Database Guide
+# Database Operations Guide
 
-The backend uses PostgreSQL 18 with Drizzle ORM and Bun's native SQL driver. Drizzle schema files are the source of truth for database structure and inferred TypeScript models.
-
-No migration is currently checked in. Generate the initial migration when the schema is ready to be committed.
+The local database runs PostgreSQL 18 through Docker Compose. Drizzle Kit manages migration generation, validation, and execution. Run all commands in this guide from the repository root.
 
 ## First-time setup
 
@@ -31,69 +29,45 @@ Stop PostgreSQL without deleting its data:
 bun run db:down
 ```
 
-## Database files
+## Database tooling locations
 
 ```text
 apps/backend/
-├── drizzle.config.ts          # Drizzle Kit configuration
+├── drizzle/                    # Generated migration directories
+├── drizzle.config.ts           # Drizzle Kit configuration
 └── src/database/
-    ├── index.ts               # Typed database client
-    └── schema/
-        ├── index.ts           # Schema exports
-        └── recipes.ts         # Recipe, ingredient, and step tables
+    ├── index.ts                # Database client
+    └── schema/                 # Drizzle schema source
 
-infra/compose.yaml             # Local PostgreSQL service
-.env.example                   # Local environment template
+infra/compose.yaml              # Local PostgreSQL service
+.env.example                    # Environment template
 ```
-
-The initial schema defines:
-
-- `recipes`
-- `recipe_ingredients`
-- `recipe_steps`
-
-Ingredients and steps belong to a recipe and are deleted automatically when their recipe is deleted.
 
 ## Common commands
 
 Run these commands from the repository root.
 
-| Command | Purpose |
-| --- | --- |
-| `bun run db:up` | Start local PostgreSQL |
-| `bun run db:down` | Stop local PostgreSQL without deleting data |
-| `bun run db:generate` | Generate a migration from schema changes |
-| `bun run db:check` | Check migration metadata for consistency |
-| `bun run db:migrate` | Apply pending migrations |
-| `bun run db:studio` | Open Drizzle Studio |
-| `bun run check:typescript` | Type-check all TypeScript workspaces |
+| Command                    | Purpose                                     |
+| -------------------------- | ------------------------------------------- |
+| `bun run db:up`            | Start local PostgreSQL                      |
+| `bun run db:down`          | Stop local PostgreSQL without deleting data |
+| `bun run db:generate`      | Generate a migration from schema changes    |
+| `bun run db:check`         | Check migration metadata for consistency    |
+| `bun run db:migrate`       | Apply pending migrations                    |
+| `bun run db:studio`        | Open Drizzle Studio                         |
+| `bun run check:typescript` | Type-check all TypeScript workspaces        |
 
-## Changing the schema
+## Preparing a schema change
 
-Edit the relevant file under:
-
-```text
-apps/backend/src/database/schema/
-```
-
-For a new schema file, export its tables and other schema objects from:
-
-```text
-apps/backend/src/database/schema/index.ts
-```
-
-Infer TypeScript models from the table instead of maintaining duplicate interfaces:
-
-```ts
-export type Recipe = typeof recipes.$inferSelect;
-export type NewRecipe = typeof recipes.$inferInsert;
-```
-
-Type-check the schema before generating a migration:
+1. Edit the relevant file under `apps/backend/src/database/schema/`.
+2. Export any new schema objects from `apps/backend/src/database/schema/index.ts`.
+3. Type-check the workspace:
 
 ```sh
 bun run check:typescript
 ```
+
+Do not generate a migration until the schema change is ready for review.
 
 ## Creating and applying a migration
 
@@ -130,35 +104,17 @@ Do not use `drizzle-kit push` for a shared or persistent database. It changes th
 
 Do not edit a migration after it has been applied. Create a follow-up migration instead. If a newly generated migration has not been applied, correct the TypeScript schema and regenerate it rather than editing its snapshot by hand.
 
-## Using the database in backend code
-
-Import the shared typed client and schema tables:
-
-```ts
-import { eq } from "drizzle-orm";
-
-import { database } from "./database";
-import { recipes } from "./database/schema";
-
-const recipe = await database
-  .select()
-  .from(recipes)
-  .where(eq(recipes.id, recipeId));
-```
-
-Use a transaction when one operation writes a recipe together with its ingredients or steps.
-
 ## Environment variables
 
 The database configuration comes from the root `.env` file.
 
-| Variable | Default development value | Purpose |
-| --- | --- | --- |
-| `POSTGRES_PORT` | `5433` | Host port exposed by Docker |
-| `POSTGRES_DB` | `en_place` | PostgreSQL database name |
-| `POSTGRES_USER` | `en_place` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | `en_place` | PostgreSQL password |
-| `DATABASE_URL` | `postgresql://en_place:en_place@localhost:5433/en_place` | Backend and Drizzle connection string |
+| Variable            | Default development value                                | Purpose                               |
+| ------------------- | -------------------------------------------------------- | ------------------------------------- |
+| `POSTGRES_PORT`     | `5433`                                                   | Host port exposed by Docker           |
+| `POSTGRES_DB`       | `en_place`                                               | PostgreSQL database name              |
+| `POSTGRES_USER`     | `en_place`                                               | PostgreSQL user                       |
+| `POSTGRES_PASSWORD` | `en_place`                                               | PostgreSQL password                   |
+| `DATABASE_URL`      | `postgresql://en_place:en_place@localhost:5433/en_place` | Backend and Drizzle connection string |
 
 Never commit `.env`. Commit `.env.example` when the required environment-variable contract changes.
 

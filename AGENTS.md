@@ -57,5 +57,5 @@ Never use `drizzle-kit push` for shared or persistent databases; it bypasses the
 - Prefer database-enforced invariants: `NOT NULL`, foreign keys, unique constraints, and check constraints.
 - Add an index for foreign-key access paths unless an existing index already has that key as its leading column.
 - Use `timestamp with time zone` for persisted instants.
-- Use transactions for writes spanning a recipe and its ingredients or steps.
+- Use transactions for writes
 - Use raw SQL only when Drizzle cannot express the required PostgreSQL behavior; keep such SQL parameterized and localized to the database boundary.
