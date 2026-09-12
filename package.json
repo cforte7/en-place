@@ -7,10 +7,12 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "docker compose -f infra/compose.yaml up -d --wait postgres && bun run dev:backend",
+    "dev": "docker compose -f infra/compose.yaml up -d --wait postgres && bun run --parallel 'dev:*'",
     "dev:backend": "bun run --env-file=../../.env --cwd apps/backend dev",
+    "dev:macos": "xcodebuild -skipPackagePluginValidation -project apps/macos/EnPlace.xcodeproj -scheme EnPlace -configuration Debug -derivedDataPath .build/macos build && .build/macos/Build/Products/Debug/EnPlace.app/Contents/MacOS/EnPlace",
+    "api:generate": "bun run --env-file=../../.env --cwd apps/backend api:generate",
     "check:typescript": "bun run --filter '*' typecheck",
-    "check:swift": "xcodebuild -project apps/macos/EnPlace.xcodeproj -scheme EnPlace -configuration Debug build",
+    "check:swift": "xcodebuild -skipPackagePluginValidation -project apps/macos/EnPlace.xcodeproj -scheme EnPlace -configuration Debug build",
     "check": "bun run check:typescript && bun run check:swift",
     "db:up": "docker compose -f infra/compose.yaml up -d postgres",
     "db:down": "docker compose -f infra/compose.yaml down",

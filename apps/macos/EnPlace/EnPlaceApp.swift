@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct EnPlaceApp: App {
+    @State private var authSession = AuthSessionStore()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(authSession: authSession)
         }
     }
 }
