@@ -1,12 +1,9 @@
 import { createMiddleware } from "hono/factory";
-import type { RequestIdVariables } from "hono/request-id";
+import type { AppEnvironment } from "./environment";
 import { routePath } from "hono/route";
 
 import { httpLogger } from "../observability/logging";
 
-export type AppEnvironment = {
-  Variables: RequestIdVariables;
-};
 
 export const requestLogging = createMiddleware<AppEnvironment>(
   async (context, next) => {

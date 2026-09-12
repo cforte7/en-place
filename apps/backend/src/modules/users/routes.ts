@@ -1,18 +1,21 @@
 import {
   apiErrorSchema,
+  authenticatedSessionResponseSchema,
   createUserRequestSchema,
-  userResponseSchema,
 } from "@en-place/contracts";
 import { createRoute, type RouteHandler } from "@hono/zod-openapi";
 
 import { database } from "../../database";
-import { users } from "../../database/schema";
-import type { AppEnvironment } from "../../http/request-logging";
+import { users, userSessions } from "../../database/schema";
+import type { AppEnvironment } from "../../http/environment";
 import { usersLogger } from "../../observability/logging";
+import { createSessionMaterial } from "../auth/session";
+import { presentUser, publicUserColumns } from "./presentation";
 
 export const createUserRoute = createRoute({
   method: "post",
   path: "/users",
+  operationId: "createUser",
   request: {
     body: {
       content: {
@@ -27,7 +30,7 @@ export const createUserRoute = createRoute({
     201: {
       content: {
         "application/json": {
-          schema: userResponseSchema,
+          schema: authenticatedSessionResponseSchema,
         },
       },
       description: "The newly created user",
@@ -67,9 +70,10 @@ export const createUserHandler: RouteHandler<
   const passwordHash = await Bun.password.hash(input.password, {
     algorithm: "argon2id",
   });
+  const sessionMaterial = createSessionMaterial();
 
-  const user = await database.transaction(async (transaction) => {
-    const [createdUser] = await transaction
+  const creation = await database.transaction(async (transaction) => {
+    const [user] = await transaction
       .insert(users)
       .values({
         email: input.email,
@@ -77,19 +81,29 @@ export const createUserHandler: RouteHandler<
         displayName: input.displayName,
       })
       .onConflictDoNothing({ target: users.email })
-      .returning({
-        id: users.id,
-        email: users.email,
-        displayName: users.displayName,
-        emailVerifiedAt: users.emailVerifiedAt,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-      });
+      .returning(publicUserColumns);
 
-    return createdUser;
+    if (!user) {
+      return undefined;
+    }
+
+    const [session] = await transaction
+      .insert(userSessions)
+      .values({
+        userId: user.id,
+        tokenHash: sessionMaterial.tokenHash,
+        expiresAt: sessionMaterial.expiresAt,
+      })
+      .returning({ id: userSessions.id });
+
+    if (!session) {
+      throw new Error("Session insert did not return a row");
+    }
+
+    return { session, user };
   });
 
-  if (!user) {
+  if (!creation) {
     return context.json(
       {
         error: {
@@ -103,16 +117,18 @@ export const createUserHandler: RouteHandler<
 
   usersLogger.info("Created user {userId}", {
     event: "user.created",
-    userId: user.id,
+    userId: creation.user.id,
+    sessionId: creation.session.id,
     requestId: context.get("requestId"),
   });
 
+  context.header("Cache-Control", "no-store");
+
   return context.json(
     {
-      ...user,
-      emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
+      sessionToken: sessionMaterial.token,
+      expiresAt: sessionMaterial.expiresAt.toISOString(),
+      user: presentUser(creation.user),
     },
     201,
   );

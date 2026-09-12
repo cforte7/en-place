@@ -48,5 +48,6 @@ export async function configureLogging(): Promise<void> {
 }
 
 export const applicationLogger = getLogger(["en-place", "application"]);
+export const authLogger = getLogger(["en-place", "auth"]);
 export const httpLogger = getLogger(["en-place", "http"]);
 export const usersLogger = getLogger(["en-place", "users"]);

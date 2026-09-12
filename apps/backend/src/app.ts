@@ -5,10 +5,16 @@ import {
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { requestId } from "hono/request-id";
 
+import type { AppEnvironment } from "./http/environment";
+import { requestLogging } from "./http/request-logging";
 import {
-  requestLogging,
-  type AppEnvironment,
-} from "./http/request-logging";
+  getCurrentUserHandler,
+  getCurrentUserRoute,
+  loginHandler,
+  loginRoute,
+  logoutHandler,
+  logoutRoute,
+} from "./modules/auth/routes";
 import { createUserHandler, createUserRoute } from "./modules/users/routes";
 import { httpLogger } from "./observability/logging";
 
@@ -20,6 +26,7 @@ const health = {
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
+  operationId: "health",
   responses: {
     200: {
       content: {
@@ -47,19 +54,29 @@ export const app = new OpenAPIHono<AppEnvironment>({
     }
   },
 });
+
+app.openAPIRegistry.registerComponent("securitySchemes", "BearerAuth", {
+  type: "http",
+  scheme: "bearer",
+});
 app.use("*", requestId({ limitLength: 128 }));
 app.use("*", requestLogging);
 
 app.openapi(healthRoute, (context) => context.json(health, 200));
 app.openapi(createUserRoute, createUserHandler);
+app.openapi(loginRoute, loginHandler);
+app.openapi(getCurrentUserRoute, getCurrentUserHandler);
+app.openapi(logoutRoute, logoutHandler);
 
-app.doc("/openapi.json", {
+export const openApiDocumentConfig = {
   openapi: "3.0.0",
   info: {
     title: "En Place API",
     version: "0.0.0",
   },
-});
+} as const;
+
+app.doc("/openapi.json", openApiDocumentConfig);
 
 app.notFound((context) =>
   context.json(
