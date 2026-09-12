@@ -1,0 +1,333 @@
+import { and, asc, eq } from "drizzle-orm";
+
+import { database, type Database } from "../../database";
+import {
+  foodStates,
+  operationInputs,
+  operationOutputs,
+  operations,
+  recipes,
+  type FoodState,
+  type NewFoodState,
+  type NewOperation,
+  type Operation,
+  type OperationInput,
+  type OperationOutput,
+} from "../../database/schema";
+import type { RecipeGraph } from "./recipe-graph";
+
+export type RecipeGraphTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+export type CreateFoodStateValues = Pick<NewFoodState, "name"> &
+  Partial<Pick<NewFoodState, "description" | "metadata">>;
+export type UpdateFoodStateValues = Partial<
+  Pick<NewFoodState, "name" | "description" | "metadata">
+>;
+export type CreateOperationValues = Pick<NewOperation, "type"> &
+  Partial<
+    Pick<
+      NewOperation,
+      "name" | "instructions" | "estimatedDurationSeconds" | "config"
+    >
+  >;
+export type UpdateOperationValues = Partial<
+  Pick<
+    NewOperation,
+    "type" | "name" | "instructions" | "estimatedDurationSeconds" | "config"
+  >
+>;
+
+export type OperationConnectionValues = {
+  foodStateId: string;
+  position?: number;
+  quantity?: string | null;
+  unit?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export async function loadRecipeGraph(recipeId: string): Promise<RecipeGraph | null> {
+  return database.transaction((transaction) =>
+    recipeGraphRepository.loadRecipeGraph(transaction, recipeId),
+  );
+}
+
+class RecipeGraphRepository {
+  async loadRecipeGraph(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+  ): Promise<RecipeGraph | null> {
+    const [recipe] = await transaction
+      .select()
+      .from(recipes)
+      .where(eq(recipes.id, recipeId))
+      .limit(1);
+
+    if (!recipe) {
+      return null;
+    }
+
+    const loadedFoodStates = await transaction
+      .select()
+      .from(foodStates)
+      .where(eq(foodStates.recipeId, recipeId))
+      .orderBy(asc(foodStates.createdAt), asc(foodStates.id));
+    const loadedOperations = await transaction
+      .select()
+      .from(operations)
+      .where(eq(operations.recipeId, recipeId))
+      .orderBy(asc(operations.createdAt), asc(operations.id));
+    const inputs = await transaction
+      .select()
+      .from(operationInputs)
+      .where(eq(operationInputs.recipeId, recipeId))
+      .orderBy(asc(operationInputs.operationId), asc(operationInputs.position));
+    const outputs = await transaction
+      .select()
+      .from(operationOutputs)
+      .where(eq(operationOutputs.recipeId, recipeId))
+      .orderBy(asc(operationOutputs.operationId), asc(operationOutputs.position));
+
+    return {
+      recipe,
+      foodStates: loadedFoodStates,
+      operations: loadedOperations,
+      inputs,
+      outputs,
+    };
+  }
+
+  async createFoodState(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    values: CreateFoodStateValues,
+  ): Promise<FoodState> {
+    const [foodState] = await transaction
+      .insert(foodStates)
+      .values({ recipeId, ...values })
+      .returning();
+    return requireRow(foodState, "Failed to create food state");
+  }
+
+  async updateFoodState(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    foodStateId: string,
+    values: UpdateFoodStateValues,
+  ): Promise<FoodState | null> {
+    const [foodState] = await transaction
+      .update(foodStates)
+      .set({ ...values, updatedAt: new Date() })
+      .where(and(eq(foodStates.recipeId, recipeId), eq(foodStates.id, foodStateId)))
+      .returning();
+    return foodState ?? null;
+  }
+
+  async deleteFoodState(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    foodStateId: string,
+  ): Promise<FoodState | null> {
+    const [foodState] = await transaction
+      .delete(foodStates)
+      .where(and(eq(foodStates.recipeId, recipeId), eq(foodStates.id, foodStateId)))
+      .returning();
+    return foodState ?? null;
+  }
+
+  async createOperation(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    values: CreateOperationValues,
+  ): Promise<Operation> {
+    const [operation] = await transaction
+      .insert(operations)
+      .values({ recipeId, ...values })
+      .returning();
+    return requireRow(operation, "Failed to create operation");
+  }
+
+  async updateOperation(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    values: UpdateOperationValues,
+  ): Promise<Operation | null> {
+    const [operation] = await transaction
+      .update(operations)
+      .set({ ...values, updatedAt: new Date() })
+      .where(and(eq(operations.recipeId, recipeId), eq(operations.id, operationId)))
+      .returning();
+    return operation ?? null;
+  }
+
+  async deleteOperation(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+  ): Promise<Operation | null> {
+    const [operation] = await transaction
+      .delete(operations)
+      .where(and(eq(operations.recipeId, recipeId), eq(operations.id, operationId)))
+      .returning();
+    return operation ?? null;
+  }
+
+  async setOperationInputs(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    connections: OperationConnectionValues[],
+  ): Promise<OperationInput[]> {
+    await transaction
+      .delete(operationInputs)
+      .where(
+        and(
+          eq(operationInputs.recipeId, recipeId),
+          eq(operationInputs.operationId, operationId),
+        ),
+      );
+
+    return transaction
+      .insert(operationInputs)
+      .values(toConnectionRows(recipeId, operationId, connections))
+      .returning();
+  }
+
+  async setOperationOutputs(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    connections: OperationConnectionValues[],
+  ): Promise<OperationOutput[]> {
+    await transaction
+      .delete(operationOutputs)
+      .where(
+        and(
+          eq(operationOutputs.recipeId, recipeId),
+          eq(operationOutputs.operationId, operationId),
+        ),
+      );
+
+    return transaction
+      .insert(operationOutputs)
+      .values(toConnectionRows(recipeId, operationId, connections))
+      .returning();
+  }
+
+  async addOperationInput(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    connection: OperationConnectionValues,
+  ): Promise<OperationInput> {
+    const position =
+      connection.position ??
+      (await this.nextConnectionPosition(transaction, "input", recipeId, operationId));
+    const [input] = await transaction
+      .insert(operationInputs)
+      .values(toConnectionRow(recipeId, operationId, connection, position))
+      .returning();
+    return requireRow(input, "Failed to add operation input");
+  }
+
+  async removeOperationInput(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    foodStateId: string,
+  ): Promise<OperationInput | null> {
+    const [input] = await transaction
+      .delete(operationInputs)
+      .where(
+        and(
+          eq(operationInputs.recipeId, recipeId),
+          eq(operationInputs.operationId, operationId),
+          eq(operationInputs.foodStateId, foodStateId),
+        ),
+      )
+      .returning();
+    return input ?? null;
+  }
+
+  async addOperationOutput(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    connection: OperationConnectionValues,
+  ): Promise<OperationOutput> {
+    const position =
+      connection.position ??
+      (await this.nextConnectionPosition(transaction, "output", recipeId, operationId));
+    const [output] = await transaction
+      .insert(operationOutputs)
+      .values(toConnectionRow(recipeId, operationId, connection, position))
+      .returning();
+    return requireRow(output, "Failed to add operation output");
+  }
+
+  async removeOperationOutput(
+    transaction: RecipeGraphTransaction,
+    recipeId: string,
+    operationId: string,
+    foodStateId: string,
+  ): Promise<OperationOutput | null> {
+    const [output] = await transaction
+      .delete(operationOutputs)
+      .where(
+        and(
+          eq(operationOutputs.recipeId, recipeId),
+          eq(operationOutputs.operationId, operationId),
+          eq(operationOutputs.foodStateId, foodStateId),
+        ),
+      )
+      .returning();
+    return output ?? null;
+  }
+
+  private async nextConnectionPosition(
+    transaction: RecipeGraphTransaction,
+    connection: "input" | "output",
+    recipeId: string,
+    operationId: string,
+  ): Promise<number> {
+    const table = connection === "input" ? operationInputs : operationOutputs;
+    const rows = await transaction
+      .select({ position: table.position })
+      .from(table)
+      .where(and(eq(table.recipeId, recipeId), eq(table.operationId, operationId)));
+    return rows.reduce((maximum, row) => Math.max(maximum, row.position), -1) + 1;
+  }
+}
+
+export const recipeGraphRepository = new RecipeGraphRepository();
+
+function toConnectionRows(
+  recipeId: string,
+  operationId: string,
+  connections: OperationConnectionValues[],
+) {
+  return connections.map((connection, index) =>
+    toConnectionRow(recipeId, operationId, connection, connection.position ?? index),
+  );
+}
+
+function toConnectionRow(
+  recipeId: string,
+  operationId: string,
+  connection: OperationConnectionValues,
+  position: number,
+) {
+  return {
+    ...connection,
+    recipeId,
+    operationId,
+    position,
+  };
+}
+
+function requireRow<Row>(row: Row | undefined, message: string): Row {
+  if (!row) {
+    throw new Error(message);
+  }
+  return row;
+}

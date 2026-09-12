@@ -1,6 +1,7 @@
 # Repository Guidance
 
 Human-facing database instructions live in `docs/database.md`.
+Cooking graph data-model and mutation rules live in `docs/cooking-dag.md`.
 
 ## Database ownership
 

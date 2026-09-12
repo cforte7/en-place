@@ -2,6 +2,8 @@
 
 The local database runs PostgreSQL 18 through Docker Compose. Drizzle Kit manages migration generation, validation, and execution. Run all commands in this guide from the repository root.
 
+The cooking graph schema, invariants, and mutation boundary are documented in [`cooking-dag.md`](cooking-dag.md).
+
 ## First-time setup
 
 Requirements:

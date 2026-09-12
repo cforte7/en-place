@@ -1,6 +1,6 @@
 # Cooking DAG Design
 
-**Status:** Proposed
+**Status:** Implemented
 **Purpose:** Define the persistence and domain model for representing cooking processes as directed acyclic graphs in PostgreSQL.
 
 ## 1. Overview
