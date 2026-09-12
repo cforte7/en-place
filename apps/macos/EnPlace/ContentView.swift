@@ -18,7 +18,7 @@ struct ContentView: View {
             case .signedOut:
                 AuthenticationView(authSession: authSession)
             case .signedIn(let user):
-                SignedInView(user: user, authSession: authSession)
+                AuthenticatedAppView(user: user, authSession: authSession)
             }
         }
         .frame(minWidth: 440, minHeight: 340)
@@ -41,7 +41,6 @@ private struct AuthenticationView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var displayName = ""
-
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -113,41 +112,3 @@ private struct AuthenticationView: View {
     }
 }
 
-private struct SignedInView: View {
-    let user: AuthenticatedUser
-    @Bindable var authSession: AuthSessionStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Welcome\(user.displayName.map { ", \($0)" } ?? "")")
-                    .font(.largeTitle.weight(.semibold))
-                Text(user.email)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let errorMessage = authSession.errorMessage {
-                Text(errorMessage)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack {
-                Spacer()
-                if authSession.isWorking {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Button("Sign Out") {
-                    Task {
-                        await authSession.signOut()
-                    }
-                }
-                .disabled(authSession.isWorking)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: 420)
-    }
-}
