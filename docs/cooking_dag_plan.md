@@ -800,7 +800,7 @@ Graph tables should not be mutated independently by arbitrary application code.
 Introduce a domain/service boundary such as:
 
 ```text
-RecipeGraphService
+recipeGraphService
 ```
 
 with operations resembling:
@@ -1519,7 +1519,7 @@ RecipeRepository
 FoodStateRepository
 OperationRepository
 RecipeGraphRepository
-RecipeGraphService
+recipeGraphService
 ```
 
 The exact split may depend on the existing application architecture.
@@ -1543,7 +1543,7 @@ Repositories should not contain domain rules such as cycle detection unless the 
 A reasonable direction is:
 
 ```text
-RecipeGraphService
+recipeGraphService
     |
     +-- transaction management
     +-- recipe graph locking

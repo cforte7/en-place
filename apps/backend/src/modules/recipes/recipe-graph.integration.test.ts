@@ -16,7 +16,7 @@ afterEach(async () => {
   }
 });
 
-describe.serial("RecipeGraphService", () => {
+describe.serial("recipeGraphService", () => {
   test("creates and loads an operation atomically", async () => {
     const recipe = await createRecipe("Atomic operation");
     const input = await recipeGraphService.createFoodState(recipe.id, { name: "raw" });

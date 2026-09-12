@@ -3,12 +3,10 @@ import { sql } from "drizzle-orm";
 import { database } from "../../database";
 import type { FoodState, Operation, OperationInput, OperationOutput } from "../../database/schema";
 import {
-  loadRecipeGraph,
-  recipeGraphRepository,
+  RecipeGraphRepository,
   type CreateFoodStateValues,
   type CreateOperationValues,
   type OperationConnectionValues,
-  type RecipeGraphTransaction,
   type UpdateFoodStateValues,
   type UpdateOperationValues,
 } from "./recipe-graph-repository";
@@ -47,14 +45,16 @@ export class RecipeGraphValidationError extends Error {
   }
 }
 
-export class RecipeGraphService {
+class RecipeGraphService {
   load(recipeId: string): Promise<RecipeGraph | null> {
-    return loadRecipeGraph(recipeId);
+    return database.transaction((transaction) =>
+      new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId),
+    );
   }
 
   createFoodState(recipeId: string, values: CreateFoodStateValues): Promise<FoodState> {
-    return this.withLockedGraphMutation(recipeId, (transaction) =>
-      recipeGraphRepository.createFoodState(transaction, recipeId, values),
+    return this.withLockedGraphMutation(recipeId, (repository) =>
+      repository.createFoodState(recipeId, values),
     );
   }
 
@@ -64,12 +64,8 @@ export class RecipeGraphService {
     values: UpdateFoodStateValues,
   ): Promise<FoodState> {
     return database.transaction(async (transaction) => {
-      const foodState = await recipeGraphRepository.updateFoodState(
-        transaction,
-        recipeId,
-        foodStateId,
-        values,
-      );
+      const repository = new RecipeGraphRepository(transaction);
+      const foodState = await repository.updateFoodState(recipeId, foodStateId, values);
       if (!foodState) {
         throw new RecipeGraphEntityNotFoundError("foodState", foodStateId);
       }
@@ -78,12 +74,8 @@ export class RecipeGraphService {
   }
 
   deleteFoodState(recipeId: string, foodStateId: string): Promise<FoodState> {
-    return this.withLockedGraphMutation(recipeId, async (transaction) => {
-      const foodState = await recipeGraphRepository.deleteFoodState(
-        transaction,
-        recipeId,
-        foodStateId,
-      );
+    return this.withLockedGraphMutation(recipeId, async (repository) => {
+      const foodState = await repository.deleteFoodState(recipeId, foodStateId);
       if (!foodState) {
         throw new RecipeGraphEntityNotFoundError("foodState", foodStateId);
       }
@@ -96,24 +88,10 @@ export class RecipeGraphService {
     requireConnections("outputs", request.outputs);
     const { inputs, outputs, ...values } = request;
 
-    return this.withLockedGraphMutation(recipeId, async (transaction) => {
-      const operation = await recipeGraphRepository.createOperation(
-        transaction,
-        recipeId,
-        values,
-      );
-      await recipeGraphRepository.setOperationInputs(
-        transaction,
-        recipeId,
-        operation.id,
-        inputs,
-      );
-      await recipeGraphRepository.setOperationOutputs(
-        transaction,
-        recipeId,
-        operation.id,
-        outputs,
-      );
+    return this.withLockedGraphMutation(recipeId, async (repository) => {
+      const operation = await repository.createOperation(recipeId, values);
+      await repository.setOperationInputs(recipeId, operation.id, inputs);
+      await repository.setOperationOutputs(recipeId, operation.id, outputs);
       return operation;
     });
   }
@@ -124,12 +102,8 @@ export class RecipeGraphService {
     values: UpdateOperationValues,
   ): Promise<Operation> {
     return database.transaction(async (transaction) => {
-      const operation = await recipeGraphRepository.updateOperation(
-        transaction,
-        recipeId,
-        operationId,
-        values,
-      );
+      const repository = new RecipeGraphRepository(transaction);
+      const operation = await repository.updateOperation(recipeId, operationId, values);
       if (!operation) {
         throw new RecipeGraphEntityNotFoundError("operation", operationId);
       }
@@ -138,12 +112,8 @@ export class RecipeGraphService {
   }
 
   deleteOperation(recipeId: string, operationId: string): Promise<Operation> {
-    return this.withLockedGraphMutation(recipeId, async (transaction) => {
-      const operation = await recipeGraphRepository.deleteOperation(
-        transaction,
-        recipeId,
-        operationId,
-      );
+    return this.withLockedGraphMutation(recipeId, async (repository) => {
+      const operation = await repository.deleteOperation(recipeId, operationId);
       if (!operation) {
         throw new RecipeGraphEntityNotFoundError("operation", operationId);
       }
@@ -157,8 +127,8 @@ export class RecipeGraphService {
     inputs: OperationConnectionValues[],
   ): Promise<OperationInput[]> {
     requireConnections("inputs", inputs);
-    return this.withLockedGraphMutation(recipeId, (transaction) =>
-      recipeGraphRepository.setOperationInputs(transaction, recipeId, operationId, inputs),
+    return this.withLockedGraphMutation(recipeId, (repository) =>
+      repository.setOperationInputs(recipeId, operationId, inputs),
     );
   }
 
@@ -168,8 +138,8 @@ export class RecipeGraphService {
     outputs: OperationConnectionValues[],
   ): Promise<OperationOutput[]> {
     requireConnections("outputs", outputs);
-    return this.withLockedGraphMutation(recipeId, (transaction) =>
-      recipeGraphRepository.setOperationOutputs(transaction, recipeId, operationId, outputs),
+    return this.withLockedGraphMutation(recipeId, (repository) =>
+      repository.setOperationOutputs(recipeId, operationId, outputs),
     );
   }
 
@@ -178,8 +148,8 @@ export class RecipeGraphService {
     operationId: string,
     input: OperationConnectionValues,
   ): Promise<OperationInput> {
-    return this.withLockedGraphMutation(recipeId, (transaction) =>
-      recipeGraphRepository.addOperationInput(transaction, recipeId, operationId, input),
+    return this.withLockedGraphMutation(recipeId, (repository) =>
+      repository.addOperationInput(recipeId, operationId, input),
     );
   }
 
@@ -188,9 +158,8 @@ export class RecipeGraphService {
     operationId: string,
     foodStateId: string,
   ): Promise<OperationInput> {
-    return this.withLockedGraphMutation(recipeId, async (transaction) => {
-      const input = await recipeGraphRepository.removeOperationInput(
-        transaction,
+    return this.withLockedGraphMutation(recipeId, async (repository) => {
+      const input = await repository.removeOperationInput(
         recipeId,
         operationId,
         foodStateId,
@@ -210,8 +179,8 @@ export class RecipeGraphService {
     operationId: string,
     output: OperationConnectionValues,
   ): Promise<OperationOutput> {
-    return this.withLockedGraphMutation(recipeId, (transaction) =>
-      recipeGraphRepository.addOperationOutput(transaction, recipeId, operationId, output),
+    return this.withLockedGraphMutation(recipeId, (repository) =>
+      repository.addOperationOutput(recipeId, operationId, output),
     );
   }
 
@@ -220,9 +189,8 @@ export class RecipeGraphService {
     operationId: string,
     foodStateId: string,
   ): Promise<OperationOutput> {
-    return this.withLockedGraphMutation(recipeId, async (transaction) => {
-      const output = await recipeGraphRepository.removeOperationOutput(
-        transaction,
+    return this.withLockedGraphMutation(recipeId, async (repository) => {
+      const output = await repository.removeOperationOutput(
         recipeId,
         operationId,
         foodStateId,
@@ -239,15 +207,16 @@ export class RecipeGraphService {
 
   private withLockedGraphMutation<Result>(
     recipeId: string,
-    mutation: (transaction: RecipeGraphTransaction) => Promise<Result>,
+    mutation: (repository: RecipeGraphRepository) => Promise<Result>,
   ): Promise<Result> {
     return database.transaction(async (transaction) => {
       await transaction.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${recipeId}::text, 0))`,
       );
 
-      const result = await mutation(transaction);
-      const graph = await recipeGraphRepository.loadRecipeGraph(transaction, recipeId);
+      const repository = new RecipeGraphRepository(transaction);
+      const result = await mutation(repository);
+      const graph = await repository.loadRecipeGraph(recipeId);
       if (!graph) {
         throw new RecipeGraphNotFoundError(recipeId);
       }

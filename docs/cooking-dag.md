@@ -32,7 +32,7 @@ The induced food-state dependencies are `A -> C` and `B -> C`.
 | Concern | Source |
 | --- | --- |
 | Drizzle schema and inferred persistence models | `apps/backend/src/database/schema/recipes.ts` |
-| Complete graph loading and SQL mutations | `apps/backend/src/modules/recipes/recipe-graph-repository.ts` |
+| Transaction-scoped graph loading and SQL mutations | `apps/backend/src/modules/recipes/recipe-graph-repository.ts` |
 | Traversal, indexing, cycle detection, and validation | `apps/backend/src/modules/recipes/recipe-graph.ts` |
 | Transactional mutation boundary | `apps/backend/src/modules/recipes/recipe-graph-service.ts` |
 | Domain tests | `apps/backend/src/modules/recipes/recipe-graph.test.ts` |
@@ -164,12 +164,14 @@ Every topology mutation follows this sequence:
 
 1. Begin a PostgreSQL transaction.
 2. Acquire a transaction-scoped advisory lock derived from the recipe ID.
-3. Perform the mutation.
-4. Reload the complete recipe graph inside the transaction.
+3. Construct a repository bound to that transaction and perform the mutation.
+4. Reload the complete recipe graph through the same repository.
 5. Validate all graph invariants, including acyclicity.
 6. Commit if valid; throw and roll back if invalid.
 
 All new topology-changing service methods must use the same locked mutation path. This serializes structural changes to one recipe while allowing different recipes to change concurrently. Validating without the lock is unsafe: two individually valid concurrent changes could combine into a cycle.
+
+`RecipeGraphRepository` instances are transaction-scoped. Construct them inside the transaction callback and do not retain or return them after that callback completes.
 
 Metadata-only updates to existing food states and operations do not change topology and therefore do not require the recipe lock.
 
@@ -235,7 +237,7 @@ Execution state belongs in future run/session tables. Equipment is a resource, n
 
 1. Preserve the bipartite `FoodState -> Operation -> FoodState` structure unless the product requirement explicitly changes the domain model.
 2. Decide whether each new invariant belongs in PostgreSQL, pure graph validation, or both.
-3. Route every topology change through `RecipeGraphService` and its recipe-scoped lock.
+3. Route every topology change through `recipeGraphService` and its recipe-scoped lock.
 4. Update the Drizzle schema and continue inferring persistence models from it.
 5. Cover new graph behavior in the pure tests; cover PostgreSQL constraints or transactions in integration tests.
 6. Run TypeScript checks and the focused graph tests.

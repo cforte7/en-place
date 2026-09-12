@@ -47,16 +47,15 @@ export type OperationConnectionValues = {
 
 export async function loadRecipeGraph(recipeId: string): Promise<RecipeGraph | null> {
   return database.transaction((transaction) =>
-    recipeGraphRepository.loadRecipeGraph(transaction, recipeId),
+    new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId),
   );
 }
 
-class RecipeGraphRepository {
-  async loadRecipeGraph(
-    transaction: RecipeGraphTransaction,
-    recipeId: string,
-  ): Promise<RecipeGraph | null> {
-    const [recipe] = await transaction
+export class RecipeGraphRepository {
+  constructor(private readonly transaction: RecipeGraphTransaction) {}
+
+  async loadRecipeGraph(recipeId: string): Promise<RecipeGraph | null> {
+    const [recipe] = await this.transaction
       .select()
       .from(recipes)
       .where(eq(recipes.id, recipeId))
@@ -66,22 +65,22 @@ class RecipeGraphRepository {
       return null;
     }
 
-    const loadedFoodStates = await transaction
+    const loadedFoodStates = await this.transaction
       .select()
       .from(foodStates)
       .where(eq(foodStates.recipeId, recipeId))
       .orderBy(asc(foodStates.createdAt), asc(foodStates.id));
-    const loadedOperations = await transaction
+    const loadedOperations = await this.transaction
       .select()
       .from(operations)
       .where(eq(operations.recipeId, recipeId))
       .orderBy(asc(operations.createdAt), asc(operations.id));
-    const inputs = await transaction
+    const inputs = await this.transaction
       .select()
       .from(operationInputs)
       .where(eq(operationInputs.recipeId, recipeId))
       .orderBy(asc(operationInputs.operationId), asc(operationInputs.position));
-    const outputs = await transaction
+    const outputs = await this.transaction
       .select()
       .from(operationOutputs)
       .where(eq(operationOutputs.recipeId, recipeId))
@@ -97,11 +96,10 @@ class RecipeGraphRepository {
   }
 
   async createFoodState(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     values: CreateFoodStateValues,
   ): Promise<FoodState> {
-    const [foodState] = await transaction
+    const [foodState] = await this.transaction
       .insert(foodStates)
       .values({ recipeId, ...values })
       .returning();
@@ -109,12 +107,11 @@ class RecipeGraphRepository {
   }
 
   async updateFoodState(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     foodStateId: string,
     values: UpdateFoodStateValues,
   ): Promise<FoodState | null> {
-    const [foodState] = await transaction
+    const [foodState] = await this.transaction
       .update(foodStates)
       .set({ ...values, updatedAt: new Date() })
       .where(and(eq(foodStates.recipeId, recipeId), eq(foodStates.id, foodStateId)))
@@ -122,12 +119,8 @@ class RecipeGraphRepository {
     return foodState ?? null;
   }
 
-  async deleteFoodState(
-    transaction: RecipeGraphTransaction,
-    recipeId: string,
-    foodStateId: string,
-  ): Promise<FoodState | null> {
-    const [foodState] = await transaction
+  async deleteFoodState(recipeId: string, foodStateId: string): Promise<FoodState | null> {
+    const [foodState] = await this.transaction
       .delete(foodStates)
       .where(and(eq(foodStates.recipeId, recipeId), eq(foodStates.id, foodStateId)))
       .returning();
@@ -135,11 +128,10 @@ class RecipeGraphRepository {
   }
 
   async createOperation(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     values: CreateOperationValues,
   ): Promise<Operation> {
-    const [operation] = await transaction
+    const [operation] = await this.transaction
       .insert(operations)
       .values({ recipeId, ...values })
       .returning();
@@ -147,12 +139,11 @@ class RecipeGraphRepository {
   }
 
   async updateOperation(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     values: UpdateOperationValues,
   ): Promise<Operation | null> {
-    const [operation] = await transaction
+    const [operation] = await this.transaction
       .update(operations)
       .set({ ...values, updatedAt: new Date() })
       .where(and(eq(operations.recipeId, recipeId), eq(operations.id, operationId)))
@@ -160,12 +151,8 @@ class RecipeGraphRepository {
     return operation ?? null;
   }
 
-  async deleteOperation(
-    transaction: RecipeGraphTransaction,
-    recipeId: string,
-    operationId: string,
-  ): Promise<Operation | null> {
-    const [operation] = await transaction
+  async deleteOperation(recipeId: string, operationId: string): Promise<Operation | null> {
+    const [operation] = await this.transaction
       .delete(operations)
       .where(and(eq(operations.recipeId, recipeId), eq(operations.id, operationId)))
       .returning();
@@ -173,12 +160,11 @@ class RecipeGraphRepository {
   }
 
   async setOperationInputs(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     connections: OperationConnectionValues[],
   ): Promise<OperationInput[]> {
-    await transaction
+    await this.transaction
       .delete(operationInputs)
       .where(
         and(
@@ -187,19 +173,18 @@ class RecipeGraphRepository {
         ),
       );
 
-    return transaction
+    return this.transaction
       .insert(operationInputs)
       .values(toConnectionRows(recipeId, operationId, connections))
       .returning();
   }
 
   async setOperationOutputs(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     connections: OperationConnectionValues[],
   ): Promise<OperationOutput[]> {
-    await transaction
+    await this.transaction
       .delete(operationOutputs)
       .where(
         and(
@@ -208,22 +193,21 @@ class RecipeGraphRepository {
         ),
       );
 
-    return transaction
+    return this.transaction
       .insert(operationOutputs)
       .values(toConnectionRows(recipeId, operationId, connections))
       .returning();
   }
 
   async addOperationInput(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     connection: OperationConnectionValues,
   ): Promise<OperationInput> {
     const position =
       connection.position ??
-      (await this.nextConnectionPosition(transaction, "input", recipeId, operationId));
-    const [input] = await transaction
+      (await this.nextConnectionPosition("input", recipeId, operationId));
+    const [input] = await this.transaction
       .insert(operationInputs)
       .values(toConnectionRow(recipeId, operationId, connection, position))
       .returning();
@@ -231,12 +215,11 @@ class RecipeGraphRepository {
   }
 
   async removeOperationInput(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     foodStateId: string,
   ): Promise<OperationInput | null> {
-    const [input] = await transaction
+    const [input] = await this.transaction
       .delete(operationInputs)
       .where(
         and(
@@ -250,15 +233,14 @@ class RecipeGraphRepository {
   }
 
   async addOperationOutput(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     connection: OperationConnectionValues,
   ): Promise<OperationOutput> {
     const position =
       connection.position ??
-      (await this.nextConnectionPosition(transaction, "output", recipeId, operationId));
-    const [output] = await transaction
+      (await this.nextConnectionPosition("output", recipeId, operationId));
+    const [output] = await this.transaction
       .insert(operationOutputs)
       .values(toConnectionRow(recipeId, operationId, connection, position))
       .returning();
@@ -266,12 +248,11 @@ class RecipeGraphRepository {
   }
 
   async removeOperationOutput(
-    transaction: RecipeGraphTransaction,
     recipeId: string,
     operationId: string,
     foodStateId: string,
   ): Promise<OperationOutput | null> {
-    const [output] = await transaction
+    const [output] = await this.transaction
       .delete(operationOutputs)
       .where(
         and(
@@ -285,21 +266,18 @@ class RecipeGraphRepository {
   }
 
   private async nextConnectionPosition(
-    transaction: RecipeGraphTransaction,
     connection: "input" | "output",
     recipeId: string,
     operationId: string,
   ): Promise<number> {
     const table = connection === "input" ? operationInputs : operationOutputs;
-    const rows = await transaction
+    const rows = await this.transaction
       .select({ position: table.position })
       .from(table)
       .where(and(eq(table.recipeId, recipeId), eq(table.operationId, operationId)));
     return rows.reduce((maximum, row) => Math.max(maximum, row.position), -1) + 1;
   }
 }
-
-export const recipeGraphRepository = new RecipeGraphRepository();
 
 function toConnectionRows(
   recipeId: string,
