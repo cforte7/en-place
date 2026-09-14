@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Link,
   Navigate,
   NavLink,
   Outlet,
   Route,
   Routes,
+  useLocation,
 } from "react-router-dom";
 import type {
   AuthenticatedSessionResponse,
@@ -22,6 +24,8 @@ import {
   logout,
   saveSessionToken,
 } from "./api";
+
+import { RecipeBuilderPage } from "./RecipeBuilder";
 
 const currentUserQueryKey = ["current-user"] as const;
 
@@ -93,6 +97,7 @@ export function App() {
       >
         <Route index element={<HomePage user={user} />} />
         <Route path="account" element={<AccountPage user={user} />} />
+        <Route path="recipes/new" element={<RecipeBuilderPage />} />
       </Route>
       <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
     </Routes>
@@ -222,6 +227,9 @@ function AppShell({
   isSigningOut: boolean;
   onSignOut: () => void;
 }) {
+  const location = useLocation();
+  const isRecipeBuilder = location.pathname === "/recipes/new";
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -234,7 +242,7 @@ function AppShell({
           {isSigningOut ? "Signing out…" : "Sign out"}
         </button>
       </header>
-      <main className="page-content">
+      <main className={isRecipeBuilder ? "page-content recipe-builder-content" : "page-content"}>
         <Outlet />
       </main>
     </div>
@@ -251,6 +259,10 @@ function HomePage({ user }: { user: UserResponse | undefined }) {
       <p className="eyebrow">Home</p>
       <h1>Welcome{user.displayName ? `, ${user.displayName}` : ""}.</h1>
       <p className="lead">You are signed in to En Place.</p>
+      <Link className="create-recipe-button" to="/recipes/new">
+        <span aria-hidden="true">+</span>
+        Add a recipe
+      </Link>
       <div className="status-card">
         <span className="status-dot" aria-hidden="true" />
         <div>
