@@ -17,6 +17,7 @@ import {
   type Connection,
   type Edge,
   type IsValidConnection,
+  type OnConnectEnd,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
@@ -30,41 +31,126 @@ type FoodStateNode = Node<RecipeNodeData, "foodState">;
 type OperationNode = Node<RecipeNodeData, "operation">;
 type RecipeNode = FoodStateNode | OperationNode;
 type RecipeEdge = Edge<Record<string, never>, "smoothstep">;
+type NodeType = RecipeNode["type"];
+
+type RecipeNodeOptions = {
+  id: string;
+  type: NodeType;
+  position: RecipeNode["position"];
+  label?: string;
+  origin?: NonNullable<RecipeNode["origin"]>;
+};
+
+type RecipeEdgeEndpoints = Pick<Connection, "source" | "target"> &
+  Partial<Pick<Connection, "sourceHandle" | "targetHandle">>;
+
+function createRecipeNode({
+  id,
+  type,
+  position,
+  label,
+  origin,
+}: RecipeNodeOptions): RecipeNode {
+  const node = {
+    id,
+    position,
+    data: {
+      label: label ?? (type === "foodState" ? "New ingredient" : "New step"),
+    },
+    ...(origin ? { origin } : {}),
+  };
+
+  return type === "foodState"
+    ? ({ ...node, type } satisfies FoodStateNode)
+    : ({ ...node, type } satisfies OperationNode);
+}
+
+function createRecipeEdge(endpoints: RecipeEdgeEndpoints): RecipeEdge {
+  return {
+    id: `${endpoints.source}-${endpoints.target}`,
+    ...endpoints,
+    type: "smoothstep",
+    markerEnd: { type: MarkerType.ArrowClosed },
+  };
+}
+
+function wouldCreateCycle(
+  source: RecipeNode,
+  target: RecipeNode,
+  nodes: RecipeNode[],
+  edges: RecipeEdge[],
+) {
+  const visited = new Set<string>();
+  const pending = [target];
+
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node || visited.has(node.id)) {
+      continue;
+    }
+    if (node.id === source.id) {
+      return true;
+    }
+
+    visited.add(node.id);
+    pending.push(...getOutgoers(node, nodes, edges));
+  }
+
+  return false;
+}
+
+function isRecipeConnectionValid(
+  connection: RecipeEdge | Connection,
+  nodes: RecipeNode[],
+  edges: RecipeEdge[],
+) {
+  const source = nodes.find((node) => node.id === connection.source);
+  const target = nodes.find((node) => node.id === connection.target);
+
+  if (!source || !target || source.type === target.type) {
+    return false;
+  }
+
+  if (
+    target.type === "foodState" &&
+    edges.some((edge) => edge.target === target.id)
+  ) {
+    return false;
+  }
+
+  return !wouldCreateCycle(source, target, nodes, edges);
+}
 
 const initialNodes: RecipeNode[] = [
-  {
+  createRecipeNode({
     id: "food-state-1",
     type: "foodState",
     position: { x: 40, y: 120 },
-    data: { label: "Raw ingredient" },
-  },
-  {
+    label: "Raw ingredient",
+  }),
+  createRecipeNode({
     id: "operation-1",
     type: "operation",
     position: { x: 340, y: 120 },
-    data: { label: "Prepare" },
-  },
-  {
+    label: "Prepare",
+  }),
+  createRecipeNode({
     id: "food-state-2",
     type: "foodState",
     position: { x: 640, y: 120 },
-    data: { label: "Prepared ingredient" },
-  },
+    label: "Prepared ingredient",
+  }),
 ];
 
 const initialEdges: RecipeEdge[] = [
-  {
-    id: "food-state-1-operation-1",
+  createRecipeEdge({
     source: "food-state-1",
     target: "operation-1",
-    type: "smoothstep",
-  },
-  {
-    id: "operation-1-food-state-2",
+  }),
+  createRecipeEdge({
     source: "operation-1",
     target: "food-state-2",
-    type: "smoothstep",
-  },
+  }),
 ];
 
 const nodeTypes = {
@@ -88,62 +174,77 @@ function RecipeBuilder() {
     useEdgesState<RecipeEdge>(initialEdges);
   const canvasRef = useRef<HTMLDivElement>(null);
   const addedNodeCount = useRef(0);
-  const { screenToFlowPosition } = useReactFlow<RecipeNode, RecipeEdge>();
+  const { screenToFlowPosition, ...rest } = useReactFlow<
+    RecipeNode,
+    RecipeEdge
+  >();
 
   const isValidConnection = useCallback<IsValidConnection<RecipeEdge>>(
-    (connection) => {
-      const source = nodes.find((node) => node.id === connection.source);
-      const target = nodes.find((node) => node.id === connection.target);
-
-      if (!source || !target || source.type === target.type) {
-        return false;
-      }
-
-      if (
-        target.type === "foodState" &&
-        edges.some((edge) => edge.target === target.id)
-      ) {
-        return false;
-      }
-
-      const visited = new Set<string>();
-      const pending = [target];
-
-      while (pending.length > 0) {
-        const node = pending.pop();
-        if (!node || visited.has(node.id)) {
-          continue;
-        }
-        if (node.id === source.id) {
-          return false;
-        }
-
-        visited.add(node.id);
-        pending.push(...getOutgoers(node, nodes, edges));
-      }
-
-      return true;
-    },
+    (connection) => isRecipeConnectionValid(connection, nodes, edges),
     [edges, nodes],
   );
 
   const connectNodes = useCallback(
     (connection: Connection) => {
       setEdges((currentEdges) =>
-        addEdge(
-          {
-            ...connection,
-            type: "smoothstep",
-            markerEnd: { type: MarkerType.ArrowClosed },
-          },
-          currentEdges,
-        ),
+        addEdge(createRecipeEdge(connection), currentEdges),
       );
     },
     [setEdges],
   );
 
-  function addNode(type: "foodState" | "operation") {
+  const connectToNewNode = useCallback<OnConnectEnd>(
+    (event, connectionState) => {
+      if (
+        connectionState.isValid ||
+        !connectionState.fromNode ||
+        connectionState.toNode
+      ) {
+        return;
+      }
+
+      const pointer =
+        "changedTouches" in event ? event.changedTouches.item(0) : event;
+      const source = nodes.find(
+        (node) => node.id === connectionState.fromNode?.id,
+      );
+
+      if (
+        !pointer ||
+        !source ||
+        (source.type !== "foodState" && source.type !== "operation")
+      ) {
+        return;
+      }
+
+      const id = crypto.randomUUID();
+      const type = source.type === "foodState" ? "operation" : "foodState";
+      const position = screenToFlowPosition({
+        x: pointer.clientX,
+        y: pointer.clientY,
+      });
+      const node = createRecipeNode({
+        id,
+        type,
+        position,
+        origin: [0, 0.5],
+      });
+
+      setNodes((currentNodes) => [...currentNodes, node]);
+      setEdges((currentEdges) =>
+        addEdge(
+          createRecipeEdge({
+            source: source.id,
+            target: id,
+          }),
+          currentEdges,
+        ),
+      );
+    },
+    [nodes, screenToFlowPosition, setEdges, setNodes],
+  );
+
+  function addNode(type: NodeType) {
     const bounds = canvasRef.current?.getBoundingClientRect();
     const slot = addedNodeCount.current++;
     const screenPosition = {
@@ -158,21 +259,11 @@ function RecipeBuilder() {
         : window.innerHeight / 2,
     };
     const position = screenToFlowPosition(screenPosition);
-    const id = crypto.randomUUID();
-    const node =
-      type === "foodState"
-        ? ({
-            id,
-            type,
-            position,
-            data: { label: "New ingredient" },
-          } satisfies FoodStateNode)
-        : ({
-            id,
-            type,
-            position,
-            data: { label: "New step" },
-          } satisfies OperationNode);
+    const node = createRecipeNode({
+      id: crypto.randomUUID(),
+      type,
+      position,
+    });
 
     setNodes((currentNodes) => [...currentNodes, node]);
   }
@@ -199,8 +290,9 @@ function RecipeBuilder() {
         <div>
           <h1 id="recipe-builder-title">Build your recipe</h1>
           <p>
-            Connect ingredients to steps, then steps to results. Cycles and
-            invalid links are blocked.
+            Connect ingredients to steps, then steps to results. Drop a
+            connection on the canvas to create the next node automatically.
+            Cycles and invalid links are blocked.
           </p>
         </div>
         <div className="node-actions" aria-label="Add recipe node">
@@ -229,6 +321,7 @@ function RecipeBuilder() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={connectNodes}
+          onConnectEnd={connectToNewNode}
           isValidConnection={isValidConnection}
           defaultEdgeOptions={{
             type: "smoothstep",
@@ -269,7 +362,6 @@ function OperationCard(props: NodeProps<OperationNode>) {
   return <RecipeNodeCard {...props} kind="operation" />;
 }
 
-type NodeType = "foodState" | "operation";
 type RecipeNodeCardProps = {
   id: string;
   data: RecipeNodeData;
@@ -288,7 +380,11 @@ function RecipeNodeCard({ id, data, selected, kind }: RecipeNodeCardProps) {
     <div
       className={`recipe-node recipe-node--${kind}${selected ? " is-selected" : ""}`}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectableStart={false}
+      />
       <div className="recipe-node-heading">
         <span>{isFoodState ? "Ingredient or result" : "Cooking step"}</span>
         <button
