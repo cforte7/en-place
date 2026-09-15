@@ -91,13 +91,23 @@ app.notFound((context) =>
 );
 
 app.onError((error, context) => {
-  httpLogger.error("Unhandled request error", {
-    event: "http.request.failed",
-    requestId: context.get("requestId"),
-    method: context.req.method,
-    path: context.req.path,
-    error,
-  });
+  const rootError = error.cause instanceof Error ? error.cause : error;
+  const errorCode =
+    "errno" in rootError ? rootError.errno
+    : "code" in rootError ? rootError.code
+    : undefined;
+
+  httpLogger.error(
+    "Unhandled request error: {errorName}; code={errorCode}",
+    {
+      event: "http.request.failed",
+      requestId: context.get("requestId"),
+      method: context.req.method,
+      path: context.req.path,
+      errorName: rootError.name,
+      errorCode,
+    },
+  );
 
   return context.json(
     {
