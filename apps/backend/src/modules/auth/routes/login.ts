@@ -2,18 +2,16 @@ import {
   apiErrorSchema,
   authenticatedSessionResponseSchema,
   loginRequestSchema,
-  userResponseSchema,
 } from "@en-place/contracts";
 import { createRoute, type RouteHandler } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 
-import { database } from "../../database";
-import { users, userSessions } from "../../database/schema";
-import type { AppEnvironment } from "../../http/environment";
-import { authLogger } from "../../observability/logging";
-import { presentUser, publicUserColumns } from "../users/presentation";
-import { requireAuthentication } from "./middleware";
-import { createSessionMaterial } from "./session";
+import { database } from "../../../database";
+import { users, userSessions } from "../../../database/schema";
+import type { AppEnvironment } from "../../../http/environment";
+import { authLogger } from "../../../observability/logging";
+import { presentUser, publicUserColumns } from "../../users/presentation";
+import { createSessionMaterial } from "../session";
 
 const dummyPasswordHash =
   "$argon2id$v=19$m=65536,t=2,p=1$TAG/WKk2X86pl/aAt4HzJvvVctzPD4WYWku29esQSdQ$H9EYRA6Y1AbAMyN6h2tL90q8YKIpewfR8zuOtGocZlw";
@@ -56,69 +54,6 @@ export const loginRoute = createRoute({
         },
       },
       description: "The credentials are invalid",
-    },
-    500: {
-      content: {
-        "application/json": {
-          schema: apiErrorSchema,
-        },
-      },
-      description: "An unexpected error occurred",
-    },
-  },
-});
-
-export const getCurrentUserRoute = createRoute({
-  method: "get",
-  path: "/users/me",
-  operationId: "getCurrentUser",
-  security: [{ BearerAuth: [] }],
-  middleware: [requireAuthentication] as const,
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: userResponseSchema,
-        },
-      },
-      description: "The authenticated user",
-    },
-    401: {
-      content: {
-        "application/json": {
-          schema: apiErrorSchema,
-        },
-      },
-      description: "Authentication is required",
-    },
-    500: {
-      content: {
-        "application/json": {
-          schema: apiErrorSchema,
-        },
-      },
-      description: "An unexpected error occurred",
-    },
-  },
-});
-
-export const logoutRoute = createRoute({
-  method: "delete",
-  path: "/auth/session",
-  operationId: "logout",
-  security: [{ BearerAuth: [] }],
-  middleware: [requireAuthentication] as const,
-  responses: {
-    204: {
-      description: "The current session was revoked",
-    },
-    401: {
-      content: {
-        "application/json": {
-          schema: apiErrorSchema,
-        },
-      },
-      description: "Authentication is required",
     },
     500: {
       content: {
@@ -201,32 +136,4 @@ export const loginHandler: RouteHandler<
     },
     200,
   );
-};
-
-export const getCurrentUserHandler: RouteHandler<
-  typeof getCurrentUserRoute,
-  AppEnvironment
-> = (context) => context.json(context.get("authenticatedUser"), 200);
-
-export const logoutHandler: RouteHandler<
-  typeof logoutRoute,
-  AppEnvironment
-> = async (context) => {
-  const sessionId = context.get("authenticatedSessionId");
-
-  await database.transaction((transaction) =>
-    transaction
-      .update(userSessions)
-      .set({ revokedAt: new Date() })
-      .where(eq(userSessions.id, sessionId)),
-  );
-
-  authLogger.info("Revoked user session {sessionId}", {
-    event: "auth.logout.succeeded",
-    sessionId,
-    userId: context.get("authenticatedUserId"),
-    requestId: context.get("requestId"),
-  });
-
-  return context.body(null, 204);
 };

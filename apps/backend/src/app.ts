@@ -7,23 +7,9 @@ import { requestId } from "hono/request-id";
 
 import type { AppEnvironment } from "./http/environment";
 import { requestLogging } from "./http/request-logging";
-import {
-  getCurrentUserHandler,
-  getCurrentUserRoute,
-  loginHandler,
-  loginRoute,
-  logoutHandler,
-  logoutRoute,
-} from "./modules/auth/routes";
-import {
-  createRecipeHandler,
-  createRecipeRoute,
-  getRecipeHandler,
-  getRecipeRoute,
-  updateRecipeHandler,
-  updateRecipeRoute,
-} from "./modules/recipes/routes";
-import { createUserHandler, createUserRoute } from "./modules/users/routes";
+import { registerAuthRoutes } from "./modules/auth/routes";
+import { registerRecipeRoutes } from "./modules/recipes/routes";
+import { registerUserRoutes } from "./modules/users/routes";
 import { httpLogger } from "./observability/logging";
 
 const health = {
@@ -71,13 +57,9 @@ app.use("*", requestId({ limitLength: 128 }));
 app.use("*", requestLogging);
 
 app.openapi(healthRoute, (context) => context.json(health, 200));
-app.openapi(createUserRoute, createUserHandler);
-app.openapi(loginRoute, loginHandler);
-app.openapi(getCurrentUserRoute, getCurrentUserHandler);
-app.openapi(logoutRoute, logoutHandler);
-app.openapi(createRecipeRoute, createRecipeHandler);
-app.openapi(getRecipeRoute, getRecipeHandler);
-app.openapi(updateRecipeRoute, updateRecipeHandler);
+registerUserRoutes(app);
+registerAuthRoutes(app);
+registerRecipeRoutes(app);
 
 export const openApiDocumentConfig = {
   openapi: "3.0.0",
