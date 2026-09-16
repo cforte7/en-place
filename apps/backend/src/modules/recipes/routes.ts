@@ -137,14 +137,14 @@ export const createRecipeHandler: RouteHandler<
 > = async (context) => {
   try {
     const graph = await recipeGraphService.create(
-      context.get("authenticatedUser").id,
+      context.get("authenticatedUserId"),
       context.req.valid("json"),
     );
 
     recipesLogger.info("Created recipe {recipeId}", {
       event: "recipe.created",
       recipeId: graph.recipe.id,
-      userId: context.get("authenticatedUser").id,
+      userId: context.get("authenticatedUserId"),
       requestId: context.get("requestId"),
     });
 
@@ -162,7 +162,7 @@ export const getRecipeHandler: RouteHandler<
   AppEnvironment
 > = async (context) => {
   const graph = await recipeGraphService.loadOwned(
-    context.get("authenticatedUser").id,
+    context.get("authenticatedUserId"),
     context.req.valid("param").recipeId,
   );
 
@@ -181,7 +181,7 @@ export const updateRecipeHandler: RouteHandler<
 
   try {
     const graph = await recipeGraphService.replace(
-      context.get("authenticatedUser").id,
+      context.get("authenticatedUserId"),
       recipeId,
       context.req.valid("json"),
     );
@@ -189,7 +189,7 @@ export const updateRecipeHandler: RouteHandler<
     recipesLogger.info("Updated recipe {recipeId}", {
       event: "recipe.updated",
       recipeId,
-      userId: context.get("authenticatedUser").id,
+      userId: context.get("authenticatedUserId"),
       requestId: context.get("requestId"),
     });
 
@@ -237,7 +237,9 @@ function isInvalidRecipeError(error: unknown): boolean {
   );
 }
 
-function invalidRecipeResponse(context: Parameters<typeof createRecipeHandler>[0]) {
+function invalidRecipeResponse(
+  context: Parameters<typeof createRecipeHandler>[0],
+) {
   return context.json(
     {
       error: {

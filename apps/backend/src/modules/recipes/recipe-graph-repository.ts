@@ -17,6 +17,7 @@ import {
   type OperationInput,
   type OperationOutput,
 } from "../../database/schema";
+import type { UserId } from "../users/user-id";
 import type { RecipeGraph } from "./recipe-graph";
 
 export type RecipeGraphTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -71,7 +72,7 @@ export async function loadRecipeGraph(recipeId: string): Promise<RecipeGraph | n
 }
 
 export async function loadOwnedRecipeGraph(
-  ownerId: string,
+  ownerId: UserId,
   recipeId: string,
 ): Promise<RecipeGraph | null> {
   return database.transaction((transaction) =>
@@ -82,7 +83,7 @@ export async function loadOwnedRecipeGraph(
 export class RecipeGraphRepository {
   constructor(private readonly transaction: RecipeGraphTransaction) {}
 
-  async loadRecipeGraph(recipeId: string, ownerId?: string): Promise<RecipeGraph | null> {
+  async loadRecipeGraph(recipeId: string, ownerId?: UserId): Promise<RecipeGraph | null> {
     const [recipe] = await this.transaction
       .select()
       .from(recipes)
@@ -127,7 +128,7 @@ export class RecipeGraphRepository {
     };
   }
 
-  async createRecipe(ownerId: string, name: string): Promise<Recipe> {
+  async createRecipe(ownerId: UserId, name: string): Promise<Recipe> {
     const [recipe] = await this.transaction
       .insert(recipes)
       .values({ ownerId, name })
@@ -136,7 +137,7 @@ export class RecipeGraphRepository {
   }
 
   async updateOwnedRecipe(
-    ownerId: string,
+    ownerId: UserId,
     recipeId: string,
     name: string,
   ): Promise<Recipe | null> {

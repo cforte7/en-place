@@ -6,6 +6,7 @@ import { database } from "../../database";
 import { users, userSessions } from "../../database/schema";
 import type { AppEnvironment } from "../../http/environment";
 import { presentUser, publicUserColumns } from "../users/presentation";
+import type { UserId } from "../users/user-id";
 import { hashSessionToken } from "./session";
 
 const bearerTokenPattern = /^Bearer ([A-Za-z0-9_-]{43})$/i;
@@ -42,6 +43,7 @@ export const requireAuthentication = createMiddleware<AppEnvironment>(
 
     const { sessionId, ...user } = authentication;
     context.set("authenticatedSessionId", sessionId);
+    context.set("authenticatedUserId", user.id as UserId);
     context.set("authenticatedUser", presentUser(user));
 
     await next();

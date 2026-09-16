@@ -224,7 +224,7 @@ export const logoutHandler: RouteHandler<
   authLogger.info("Revoked user session {sessionId}", {
     event: "auth.logout.succeeded",
     sessionId,
-    userId: context.get("authenticatedUser").id,
+    userId: context.get("authenticatedUserId"),
     requestId: context.get("requestId"),
   });
 

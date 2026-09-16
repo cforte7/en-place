@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 
 import { database } from "../../database";
 import type { FoodState, Operation, OperationInput, OperationOutput } from "../../database/schema";
+import type { UserId } from "../users/user-id";
 import {
   RecipeGraphRepository,
   type CreateFoodStateValues,
@@ -65,7 +66,7 @@ class RecipeGraphService {
     );
   }
 
-  async create(ownerId: string, input: RecipeDocument): Promise<RecipeGraph> {
+  async create(ownerId: UserId, input: RecipeDocument): Promise<RecipeGraph> {
     const document = requireValidRecipeDocument(input);
 
     return database.transaction(async (transaction) => {
@@ -76,14 +77,14 @@ class RecipeGraphService {
     });
   }
 
-  loadOwned(ownerId: string, recipeId: string): Promise<RecipeGraph | null> {
+  loadOwned(ownerId: UserId, recipeId: string): Promise<RecipeGraph | null> {
     return database.transaction((transaction) =>
       new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId, ownerId),
     );
   }
 
   async replace(
-    ownerId: string,
+    ownerId: UserId,
     recipeId: string,
     input: RecipeDocument,
   ): Promise<RecipeGraph> {

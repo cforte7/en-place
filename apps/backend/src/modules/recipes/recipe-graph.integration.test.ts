@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { database } from "../../database";
 import { recipes, users, type Recipe } from "../../database/schema";
+import type { UserId } from "../users/user-id";
 import {
   InvalidRecipeDocumentError,
   RecipeGraphNotFoundError,
@@ -12,7 +13,7 @@ import {
 } from "./recipe-graph-service";
 
 const createdRecipeIds: string[] = [];
-let ownerId: string;
+let ownerId: UserId;
 
 beforeAll(async () => {
   const [owner] = await database
@@ -25,7 +26,7 @@ beforeAll(async () => {
   if (!owner) {
     throw new Error("Failed to create recipe graph test owner");
   }
-  ownerId = owner.id;
+  ownerId = owner.id as UserId;
 });
 
 afterAll(async () => {
@@ -239,6 +240,7 @@ describe.serial("recipeGraphService", () => {
     if (!otherOwner) {
       throw new Error("Failed to create second recipe owner");
     }
+    const otherOwnerId = otherOwner.id as UserId;
 
     try {
       const document = makeRecipeDocument("Private recipe");
@@ -246,10 +248,10 @@ describe.serial("recipeGraphService", () => {
       createdRecipeIds.push(created.recipe.id);
 
       expect(
-        await recipeGraphService.loadOwned(otherOwner.id, created.recipe.id),
+        await recipeGraphService.loadOwned(otherOwnerId, created.recipe.id),
       ).toBeNull();
       await expect(
-        recipeGraphService.replace(otherOwner.id, created.recipe.id, document),
+        recipeGraphService.replace(otherOwnerId, created.recipe.id, document),
       ).rejects.toBeInstanceOf(RecipeGraphNotFoundError);
     } finally {
       await database.delete(users).where(eq(users.id, otherOwner.id));
