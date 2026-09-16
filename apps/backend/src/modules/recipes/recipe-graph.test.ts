@@ -179,6 +179,7 @@ function makeGraph(specs: OperationSpec[]): RecipeGraph {
 
   const recipe: Recipe = {
     id: recipeId,
+    ownerId: "owner-a",
     name: "Test recipe",
     description: null,
     createdAt: now,
@@ -199,6 +200,8 @@ function makeFoodState(id: string): FoodState {
     id,
     recipeId,
     name: id,
+    positionX: 0,
+    positionY: 0,
     description: null,
     metadata: {},
     createdAt: now,
@@ -211,6 +214,8 @@ function makeOperation(spec: OperationSpec): Operation {
     id: spec.id,
     recipeId,
     type: "test",
+    positionX: 0,
+    positionY: 0,
     name: null,
     instructions: null,
     estimatedDurationSeconds: null,

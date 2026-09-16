@@ -35,6 +35,8 @@ The induced food-state dependencies are `A -> C` and `B -> C`.
 | Transaction-scoped graph loading and SQL mutations | `apps/backend/src/modules/recipes/recipe-graph-repository.ts` |
 | Traversal, indexing, cycle detection, and validation | `apps/backend/src/modules/recipes/recipe-graph.ts` |
 | Transactional mutation boundary | `apps/backend/src/modules/recipes/recipe-graph-service.ts` |
+| Authenticated recipe HTTP routes | `apps/backend/src/modules/recipes/routes.ts` |
+| Shared save document and client-safe validation | `packages/contracts/src/index.ts` |
 | Domain tests | `apps/backend/src/modules/recipes/recipe-graph.test.ts` |
 | PostgreSQL integration tests | `apps/backend/src/modules/recipes/recipe-graph.integration.test.ts` |
 
@@ -44,7 +46,7 @@ The Drizzle schema is authoritative. Types such as `Recipe`, `FoodState`, `Opera
 
 ### `recipes`
 
-Owns the graph and stores its name, optional description, and timestamps. Deleting a recipe cascades through its graph.
+Owns the graph and stores its authenticated owner, name, optional description, and timestamps. `owner_id` references `users`; owner-scoped reads and replacements return not-found for recipes owned by another user. Deleting a recipe cascades through its graph.
 
 ### `food_states`
 
@@ -54,6 +56,7 @@ Stores recipe-local food states:
 - `name` is required and nonblank.
 - `description` is optional prose.
 - `metadata` is JSONB for experimental state properties that do not yet deserve stable columns.
+- `position_x` and `position_y` store the editor's floating-point graph coordinates.
 - `created_at` and `updated_at` are persisted instants.
 
 A food state with no producing output connection is a **root**. A food state with no consuming input connection is **terminal**. These properties are derived and must not be stored as flags.
@@ -67,6 +70,7 @@ Stores transformations:
 - `name` and `instructions` are optional human-facing text.
 - `estimated_duration_seconds` is optional and cannot be negative.
 - `config` is JSONB for operation-specific structured data.
+- `position_x` and `position_y` store the editor's floating-point graph coordinates.
 - `created_at` and `updated_at` are persisted instants.
 
 Keep broadly applicable fields as columns. Keep type-specific values in `config`, with application-level validation when a stable operation type is introduced. JSONB is persistence, not validation.
@@ -126,6 +130,9 @@ The service exposes explicit domain operations:
 
 ```text
 load
+create
+loadOwned
+replace
 createFoodState
 updateFoodState
 deleteFoodState
@@ -157,6 +164,14 @@ await recipeGraphService.createOperation(recipeId, {
 ```
 
 When `position` is omitted, set operations assign array order and add operations append after the current greatest position.
+
+### Whole-document save
+
+The browser persists a valid working graph through authenticated `POST /recipes` and `PUT /recipes/{recipeId}` requests. Node IDs are client-generated UUIDs. The shared `RecipeDocument` contract groups inputs and outputs under each operation and stores graph coordinates for every food state and operation.
+
+`create` writes the recipe and its complete graph in one transaction. `replace` acquires the recipe advisory lock, verifies ownership, replaces all graph rows, reloads the aggregate, and validates it before commit. Invalid replacements roll back without changing the previously saved graph. `GET /recipes/{recipeId}` loads the owner-scoped aggregate and returns the same document shape so the frontend can restore topology and node positions.
+
+All React Flow nodes use the same origin. Persisted coordinates are graph coordinates; viewport zoom, pan, selection, and undo history are not persisted.
 
 ### Transaction and locking protocol
 

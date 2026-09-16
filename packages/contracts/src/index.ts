@@ -59,6 +59,7 @@ export const apiErrorSchema = z.object({
   error: z.object({
     code: z.enum([
       "invalid_request",
+      "invalid_recipe",
       "email_taken",
       "invalid_credentials",
       "unauthorized",
@@ -70,3 +71,244 @@ export const apiErrorSchema = z.object({
 });
 
 export type ApiError = z.infer<typeof apiErrorSchema>;
+
+const recipeEntityIdSchema = z.uuid();
+
+export const recipeNodePositionSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+  })
+  .strict();
+
+export const recipeFoodStateDocumentSchema = z
+  .object({
+    id: recipeEntityIdSchema,
+    name: z.string().trim().min(1).max(200),
+    position: recipeNodePositionSchema,
+  })
+  .strict();
+
+export const recipeOperationConnectionDocumentSchema = z
+  .object({
+    foodStateId: recipeEntityIdSchema,
+  })
+  .strict();
+
+export const recipeOperationDocumentSchema = z
+  .object({
+    id: recipeEntityIdSchema,
+    type: z.string().trim().min(1).max(200),
+    position: recipeNodePositionSchema,
+    inputs: z.array(recipeOperationConnectionDocumentSchema),
+    outputs: z.array(recipeOperationConnectionDocumentSchema),
+  })
+  .strict();
+
+export const recipeDocumentSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    foodStates: z.array(recipeFoodStateDocumentSchema),
+    operations: z.array(recipeOperationDocumentSchema),
+  })
+  .strict();
+
+export type RecipeDocument = z.infer<typeof recipeDocumentSchema>;
+
+export const savedRecipeDocumentSchema = recipeDocumentSchema.extend({
+  id: z.uuid(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type SavedRecipeDocument = z.infer<typeof savedRecipeDocumentSchema>;
+
+export type RecipeDocumentValidationError =
+  | { code: "INVALID_DOCUMENT"; message: string; path: PropertyKey[] }
+  | { code: "DUPLICATE_NODE_ID"; nodeId: string; message: string }
+  | {
+    code: "MISSING_FOOD_STATE";
+    operationId: string;
+    foodStateId: string;
+    message: string;
+  }
+  | {
+    code: "DUPLICATE_CONNECTION";
+    connection: "input" | "output";
+    operationId: string;
+    foodStateId: string;
+    message: string;
+  }
+  | { code: "OPERATION_HAS_NO_INPUTS"; operationId: string; message: string }
+  | { code: "OPERATION_HAS_NO_OUTPUTS"; operationId: string; message: string }
+  | {
+    code: "MULTIPLE_PRODUCERS";
+    foodStateId: string;
+    operationIds: [string, string];
+    message: string;
+  }
+  | { code: "CYCLE_DETECTED"; message: string };
+
+export type RecipeDocumentValidationResult =
+  | { valid: true; document: RecipeDocument }
+  | { valid: false; errors: RecipeDocumentValidationError[] };
+
+export function validateRecipeDocument(input: unknown): RecipeDocumentValidationResult {
+  const parsed = recipeDocumentSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      valid: false,
+      errors: parsed.error.issues.map((issue) => ({
+        code: "INVALID_DOCUMENT",
+        message: issue.message,
+        path: issue.path,
+      })),
+    };
+  }
+
+  const document = parsed.data;
+  const errors: RecipeDocumentValidationError[] = [];
+  const nodeIds = new Set<string>();
+  const foodStateIds = new Set(document.foodStates.map(({ id }) => id));
+  const producerByFoodStateId = new Map<string, string>();
+  const adjacency = new Map(
+    document.foodStates.map(({ id }) => [id, new Set<string>()]),
+  );
+
+  for (const node of [...document.foodStates, ...document.operations]) {
+    if (nodeIds.has(node.id)) {
+      errors.push({
+        code: "DUPLICATE_NODE_ID",
+        nodeId: node.id,
+        message: "Every ingredient and cooking step must have a unique ID.",
+      });
+    }
+    nodeIds.add(node.id);
+  }
+
+  for (const operation of document.operations) {
+    if (operation.inputs.length === 0) {
+      errors.push({
+        code: "OPERATION_HAS_NO_INPUTS",
+        operationId: operation.id,
+        message: `"${operation.type}" needs at least one ingredient or prior result.`,
+      });
+    }
+    if (operation.outputs.length === 0) {
+      errors.push({
+        code: "OPERATION_HAS_NO_OUTPUTS",
+        operationId: operation.id,
+        message: `"${operation.type}" needs at least one result.`,
+      });
+    }
+
+    const inputIds = validateConnections(
+      "input",
+      operation.id,
+      operation.inputs,
+      foodStateIds,
+      errors,
+    );
+    const outputIds = validateConnections(
+      "output",
+      operation.id,
+      operation.outputs,
+      foodStateIds,
+      errors,
+    );
+
+    for (const foodStateId of outputIds) {
+      const existingProducerId = producerByFoodStateId.get(foodStateId);
+      if (existingProducerId && existingProducerId !== operation.id) {
+        errors.push({
+          code: "MULTIPLE_PRODUCERS",
+          foodStateId,
+          operationIds: [existingProducerId, operation.id],
+          message: "An ingredient or result can only be produced by one cooking step.",
+        });
+      } else {
+        producerByFoodStateId.set(foodStateId, operation.id);
+      }
+    }
+
+    for (const inputId of inputIds) {
+      const downstream = adjacency.get(inputId);
+      if (!downstream) {
+        continue;
+      }
+      for (const outputId of outputIds) {
+        if (foodStateIds.has(outputId)) {
+          downstream.add(outputId);
+        }
+      }
+    }
+  }
+
+  if (hasCycle(adjacency)) {
+    errors.push({
+      code: "CYCLE_DETECTED",
+      message: "Cooking steps cannot form a cycle.",
+    });
+  }
+
+  return errors.length === 0 ? { valid: true, document } : { valid: false, errors };
+}
+
+function validateConnections(
+  connection: "input" | "output",
+  operationId: string,
+  connections: Array<{ foodStateId: string }>,
+  foodStateIds: Set<string>,
+  errors: RecipeDocumentValidationError[],
+): Set<string> {
+  const connectedIds = new Set<string>();
+
+  for (const { foodStateId } of connections) {
+    if (!foodStateIds.has(foodStateId)) {
+      errors.push({
+        code: "MISSING_FOOD_STATE",
+        operationId,
+        foodStateId,
+        message: "A connection points to an ingredient or result that does not exist.",
+      });
+    }
+    if (connectedIds.has(foodStateId)) {
+      errors.push({
+        code: "DUPLICATE_CONNECTION",
+        connection,
+        operationId,
+        foodStateId,
+        message: "The same nodes cannot be connected more than once.",
+      });
+    }
+    connectedIds.add(foodStateId);
+  }
+
+  return connectedIds;
+}
+
+function hasCycle(adjacency: Map<string, Set<string>>): boolean {
+  const visited = new Set<string>();
+  const active = new Set<string>();
+
+  function visit(foodStateId: string): boolean {
+    if (active.has(foodStateId)) {
+      return true;
+    }
+    if (visited.has(foodStateId)) {
+      return false;
+    }
+
+    visited.add(foodStateId);
+    active.add(foodStateId);
+    for (const downstreamId of adjacency.get(foodStateId) ?? []) {
+      if (visit(downstreamId)) {
+        return true;
+      }
+    }
+    active.delete(foodStateId);
+    return false;
+  }
+
+  return [...adjacency.keys()].some(visit);
+}

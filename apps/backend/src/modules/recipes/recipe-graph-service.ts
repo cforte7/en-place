@@ -1,3 +1,9 @@
+import {
+  validateRecipeDocument,
+  type RecipeDocument,
+  type RecipeDocumentValidationError,
+} from "@en-place/contracts";
+
 import { sql } from "drizzle-orm";
 
 import { database } from "../../database";
@@ -45,11 +51,58 @@ export class RecipeGraphValidationError extends Error {
   }
 }
 
+export class InvalidRecipeDocumentError extends Error {
+  constructor(readonly errors: RecipeDocumentValidationError[]) {
+    super("Recipe document validation failed");
+    this.name = "InvalidRecipeDocumentError";
+  }
+}
+
 class RecipeGraphService {
   load(recipeId: string): Promise<RecipeGraph | null> {
     return database.transaction((transaction) =>
       new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId),
     );
+  }
+
+  async create(ownerId: string, input: RecipeDocument): Promise<RecipeGraph> {
+    const document = requireValidRecipeDocument(input);
+
+    return database.transaction(async (transaction) => {
+      const repository = new RecipeGraphRepository(transaction);
+      const recipe = await repository.createRecipe(ownerId, document.name);
+      await repository.replaceRecipeGraphRows(recipe.id, document);
+      return requireValidPersistedGraph(repository, recipe.id);
+    });
+  }
+
+  loadOwned(ownerId: string, recipeId: string): Promise<RecipeGraph | null> {
+    return database.transaction((transaction) =>
+      new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId, ownerId),
+    );
+  }
+
+  async replace(
+    ownerId: string,
+    recipeId: string,
+    input: RecipeDocument,
+  ): Promise<RecipeGraph> {
+    const document = requireValidRecipeDocument(input);
+
+    return database.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${recipeId}::text, 0))`,
+      );
+
+      const repository = new RecipeGraphRepository(transaction);
+      const recipe = await repository.updateOwnedRecipe(ownerId, recipeId, document.name);
+      if (!recipe) {
+        throw new RecipeGraphNotFoundError(recipeId);
+      }
+
+      await repository.replaceRecipeGraphRows(recipeId, document);
+      return requireValidPersistedGraph(repository, recipeId);
+    });
   }
 
   createFoodState(recipeId: string, values: CreateFoodStateValues): Promise<FoodState> {
@@ -216,15 +269,7 @@ class RecipeGraphService {
 
       const repository = new RecipeGraphRepository(transaction);
       const result = await mutation(repository);
-      const graph = await repository.loadRecipeGraph(recipeId);
-      if (!graph) {
-        throw new RecipeGraphNotFoundError(recipeId);
-      }
-
-      const validation = validateRecipeGraph(graph);
-      if (!validation.valid) {
-        throw new RecipeGraphValidationError(validation.errors);
-      }
+      await requireValidPersistedGraph(repository, recipeId);
 
       return result;
     });
@@ -240,4 +285,28 @@ function requireConnections(
   if (values.length === 0) {
     throw new TypeError(`Operation ${connection} must contain at least one food state`);
   }
+}
+
+function requireValidRecipeDocument(input: RecipeDocument): RecipeDocument {
+  const validation = validateRecipeDocument(input);
+  if (!validation.valid) {
+    throw new InvalidRecipeDocumentError(validation.errors);
+  }
+  return validation.document;
+}
+
+async function requireValidPersistedGraph(
+  repository: RecipeGraphRepository,
+  recipeId: string,
+): Promise<RecipeGraph> {
+  const graph = await repository.loadRecipeGraph(recipeId);
+  if (!graph) {
+    throw new RecipeGraphNotFoundError(recipeId);
+  }
+
+  const validation = validateRecipeGraph(graph);
+  if (!validation.valid) {
+    throw new RecipeGraphValidationError(validation.errors);
+  }
+  return graph;
 }

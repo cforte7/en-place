@@ -1,14 +1,38 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { RecipeDocument } from "@en-place/contracts";
 import { eq } from "drizzle-orm";
 
 import { database } from "../../database";
-import { recipes, type Recipe } from "../../database/schema";
+import { recipes, users, type Recipe } from "../../database/schema";
 import {
+  InvalidRecipeDocumentError,
+  RecipeGraphNotFoundError,
   RecipeGraphValidationError,
   recipeGraphService,
 } from "./recipe-graph-service";
 
 const createdRecipeIds: string[] = [];
+let ownerId: string;
+
+beforeAll(async () => {
+  const [owner] = await database
+    .insert(users)
+    .values({
+      email: `recipe-graph-${crypto.randomUUID()}@example.com`,
+      passwordHash: "integration-test",
+    })
+    .returning({ id: users.id });
+  if (!owner) {
+    throw new Error("Failed to create recipe graph test owner");
+  }
+  ownerId = owner.id;
+});
+
+afterAll(async () => {
+  if (ownerId) {
+    await database.delete(users).where(eq(users.id, ownerId));
+  }
+});
 
 afterEach(async () => {
   for (const recipeId of createdRecipeIds.splice(0)) {
@@ -142,13 +166,135 @@ describe.serial("recipeGraphService", () => {
     const graph = await recipeGraphService.load(recipe.id);
     expect(graph?.operations).toHaveLength(1);
   });
+
+  test("creates, replaces, and loads a complete owned graph with exact positions", async () => {
+    const document = makeRecipeDocument("Position round trip");
+    const created = await recipeGraphService.create(ownerId, document);
+    createdRecipeIds.push(created.recipe.id);
+
+    expect(created.foodStates.map(({ positionX, positionY }) => [positionX, positionY]))
+      .toEqual([
+        [10.25, 20.5],
+        [610.125, 20.5],
+      ]);
+    expect(created.operations[0]).toMatchObject({
+      positionX: 310.75,
+      positionY: 20.5,
+    });
+
+    const replacement: RecipeDocument = {
+      ...document,
+      name: "Moved recipe",
+      foodStates: document.foodStates.map((foodState, index) => ({
+        ...foodState,
+        position: {
+          x: foodState.position.x + index + 0.5,
+          y: foodState.position.y + 100.25,
+        },
+      })),
+    };
+    await recipeGraphService.replace(ownerId, created.recipe.id, replacement);
+
+    const loaded = await recipeGraphService.loadOwned(ownerId, created.recipe.id);
+    expect(loaded?.recipe.name).toBe("Moved recipe");
+    expect(loaded?.foodStates.map(({ positionX, positionY }) => [positionX, positionY]))
+      .toEqual([
+        [10.75, 120.75],
+        [611.625, 120.75],
+      ]);
+    expect(loaded?.inputs).toHaveLength(1);
+    expect(loaded?.outputs).toHaveLength(1);
+  });
+
+  test("rejects an invalid aggregate replacement without changing the saved graph", async () => {
+    const document = makeRecipeDocument("Valid aggregate");
+    const created = await recipeGraphService.create(ownerId, document);
+    createdRecipeIds.push(created.recipe.id);
+    const invalid: RecipeDocument = {
+      ...document,
+      name: "Invalid replacement",
+      operations: document.operations.map((operation) => ({
+        ...operation,
+        outputs: [],
+      })),
+    };
+
+    await expect(
+      recipeGraphService.replace(ownerId, created.recipe.id, invalid),
+    ).rejects.toBeInstanceOf(InvalidRecipeDocumentError);
+
+    const loaded = await recipeGraphService.loadOwned(ownerId, created.recipe.id);
+    expect(loaded?.recipe.name).toBe("Valid aggregate");
+    expect(loaded?.outputs).toHaveLength(1);
+  });
+
+  test("does not load or replace another user's recipe", async () => {
+    const [otherOwner] = await database
+      .insert(users)
+      .values({
+        email: `other-recipe-owner-${crypto.randomUUID()}@example.com`,
+        passwordHash: "integration-test",
+      })
+      .returning({ id: users.id });
+    if (!otherOwner) {
+      throw new Error("Failed to create second recipe owner");
+    }
+
+    try {
+      const document = makeRecipeDocument("Private recipe");
+      const created = await recipeGraphService.create(ownerId, document);
+      createdRecipeIds.push(created.recipe.id);
+
+      expect(
+        await recipeGraphService.loadOwned(otherOwner.id, created.recipe.id),
+      ).toBeNull();
+      await expect(
+        recipeGraphService.replace(otherOwner.id, created.recipe.id, document),
+      ).rejects.toBeInstanceOf(RecipeGraphNotFoundError);
+    } finally {
+      await database.delete(users).where(eq(users.id, otherOwner.id));
+    }
+  });
 });
 
 async function createRecipe(name: string): Promise<Recipe> {
-  const [recipe] = await database.insert(recipes).values({ name }).returning();
+  const [recipe] = await database
+    .insert(recipes)
+    .values({ ownerId, name })
+    .returning();
   if (!recipe) {
     throw new Error("Failed to create test recipe");
   }
   createdRecipeIds.push(recipe.id);
   return recipe;
+}
+
+function makeRecipeDocument(name: string): RecipeDocument {
+  const inputId = crypto.randomUUID();
+  const outputId = crypto.randomUUID();
+
+  return {
+    name,
+    foodStates: [
+      {
+        id: inputId,
+        name: "Raw",
+        position: { x: 10.25, y: 20.5 },
+      },
+      {
+        id: outputId,
+        name: "Cooked",
+        position: { x: 610.125, y: 20.5 },
+      },
+    ],
+    operations: [
+      {
+        id: crypto.randomUUID(),
+        type: "Cook",
+        position: { x: 310.75, y: 20.5 },
+        inputs: [{ foodStateId: inputId }],
+        outputs: [{ foodStateId: outputId }],
+      },
+    ],
+  };
 }

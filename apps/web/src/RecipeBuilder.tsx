@@ -1,4 +1,18 @@
-import { useCallback, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  validateRecipeDocument,
+  type RecipeDocument,
+  type SavedRecipeDocument,
+} from "@en-place/contracts";
 import {
   addEdge,
   Background,
@@ -21,7 +35,9 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+
+import { createRecipe, getRecipe, updateRecipe } from "./api";
 
 type RecipeNodeData = {
   label: string;
@@ -38,26 +54,26 @@ type RecipeNodeOptions = {
   type: NodeType;
   position: RecipeNode["position"];
   label?: string;
-  origin?: NonNullable<RecipeNode["origin"]>;
 };
 
 type RecipeEdgeEndpoints = Pick<Connection, "source" | "target"> &
   Partial<Pick<Connection, "sourceHandle" | "targetHandle">>;
+
+const recipeNodeOrigin: NonNullable<RecipeNode["origin"]> = [0, 0.5];
 
 function createRecipeNode({
   id,
   type,
   position,
   label,
-  origin,
 }: RecipeNodeOptions): RecipeNode {
   const node = {
     id,
     position,
+    origin: recipeNodeOrigin,
     data: {
       label: label ?? (type === "foodState" ? "New ingredient" : "New step"),
     },
-    ...(origin ? { origin } : {}),
   };
 
   return type === "foodState"
@@ -121,67 +137,173 @@ function isRecipeConnectionValid(
   return !wouldCreateCycle(source, target, nodes, edges);
 }
 
-const initialNodes: RecipeNode[] = [
-  createRecipeNode({
-    id: "food-state-1",
-    type: "foodState",
-    position: { x: 40, y: 120 },
-    label: "Raw ingredient",
-  }),
-  createRecipeNode({
-    id: "operation-1",
-    type: "operation",
-    position: { x: 340, y: 120 },
-    label: "Prepare",
-  }),
-  createRecipeNode({
-    id: "food-state-2",
-    type: "foodState",
-    position: { x: 640, y: 120 },
-    label: "Prepared ingredient",
-  }),
-];
+function createInitialGraph(): { nodes: RecipeNode[]; edges: RecipeEdge[] } {
+  const inputId = crypto.randomUUID();
+  const operationId = crypto.randomUUID();
+  const outputId = crypto.randomUUID();
+  const nodes: RecipeNode[] = [
+    createRecipeNode({
+      id: inputId,
+      type: "foodState",
+      position: { x: 40, y: 120 },
+      label: "Raw ingredient",
+    }),
+    createRecipeNode({
+      id: operationId,
+      type: "operation",
+      position: { x: 340, y: 120 },
+      label: "Prepare",
+    }),
+    createRecipeNode({
+      id: outputId,
+      type: "foodState",
+      position: { x: 640, y: 120 },
+      label: "Prepared ingredient",
+    }),
+  ];
 
-const initialEdges: RecipeEdge[] = [
-  createRecipeEdge({
-    source: "food-state-1",
-    target: "operation-1",
-  }),
-  createRecipeEdge({
-    source: "operation-1",
-    target: "food-state-2",
-  }),
-];
+  return {
+    nodes,
+    edges: [
+      createRecipeEdge({ source: inputId, target: operationId }),
+      createRecipeEdge({ source: operationId, target: outputId }),
+    ],
+  };
+}
 
 const nodeTypes = {
   foodState: FoodStateCard,
   operation: OperationCard,
 };
 
+const RecipeNodeLabelContext = createContext<
+  ((nodeId: string, label: string) => void) | null
+>(null);
+
 export function RecipeBuilderPage() {
+  const { recipeId } = useParams<{ recipeId: string }>();
+
   return (
     <ReactFlowProvider>
-      <RecipeBuilder />
+      {recipeId ?
+        <RecipeBuilder key={recipeId} recipeId={recipeId} />
+      : <RecipeBuilder key="new" />}
     </ReactFlowProvider>
   );
 }
 
-function RecipeBuilder() {
+function RecipeBuilder({ recipeId }: { recipeId?: string }) {
+  const initialGraph = useRef(
+    recipeId ? { nodes: [] as RecipeNode[], edges: [] as RecipeEdge[] }
+    : createInitialGraph(),
+  ).current;
   const [recipeName, setRecipeName] = useState("Untitled recipe");
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<RecipeNode>(initialNodes);
+    useNodesState<RecipeNode>(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] =
-    useEdgesState<RecipeEdge>(initialEdges);
+    useEdgesState<RecipeEdge>(initialGraph.edges);
+  const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
+  const [hydratedRecipeId, setHydratedRecipeId] = useState<string | null>(
+    recipeId ? null : "new",
+  );
   const canvasRef = useRef<HTMLDivElement>(null);
   const addedNodeCount = useRef(0);
-  const { screenToFlowPosition, ...rest } = useReactFlow<
-    RecipeNode,
-    RecipeEdge
-  >();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { screenToFlowPosition } = useReactFlow<RecipeNode, RecipeEdge>();
+  const loadedRecipe = useQuery({
+    queryKey: ["recipe", recipeId],
+    queryFn: () => getRecipe(recipeId!),
+    enabled: recipeId !== undefined,
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+  useEffect(() => {
+    if (
+      !recipeId ||
+      !loadedRecipe.data ||
+      hydratedRecipeId === recipeId
+    ) {
+      return;
+    }
+
+    const flowGraph = toFlowGraph(loadedRecipe.data);
+    setRecipeName(loadedRecipe.data.name);
+    setNodes(flowGraph.nodes);
+    setEdges(flowGraph.edges);
+    setSavedFingerprint(documentFingerprint(toRecipeDocument(loadedRecipe.data)));
+    setHydratedRecipeId(recipeId);
+  }, [
+    hydratedRecipeId,
+    loadedRecipe.data,
+    recipeId,
+    setEdges,
+    setNodes,
+  ]);
+
+  const document = useMemo(
+    () => buildRecipeDocument(recipeName, nodes, edges),
+    [edges, nodes, recipeName],
+  );
+  const validation = useMemo(
+    () => validateRecipeDocument(document),
+    [document],
+  );
+  const currentFingerprint = documentFingerprint(
+    validation.valid ? validation.document : document,
+  );
+  const isDirty = currentFingerprint !== savedFingerprint;
+  const saveRecipe = useMutation({
+    mutationFn: (input: RecipeDocument) =>
+      recipeId ? updateRecipe(recipeId, input) : createRecipe(input),
+    onSuccess: (savedRecipe) => {
+      const savedDocument = toRecipeDocument(savedRecipe);
+      const flowGraph = toFlowGraph(savedRecipe);
+      queryClient.setQueryData(["recipe", savedRecipe.id], savedRecipe);
+      setRecipeName(savedRecipe.name);
+      setNodes(flowGraph.nodes);
+      setEdges(flowGraph.edges);
+      setSavedFingerprint(documentFingerprint(savedDocument));
+      if (!recipeId) {
+        navigate(`/recipes/${savedRecipe.id}`, { replace: true });
+      }
+    },
+  });
+
+  const isLoadingRecipe =
+    recipeId !== undefined &&
+    (loadedRecipe.isPending || hydratedRecipeId !== recipeId);
+  const invalidReason =
+    validation.valid ? undefined : validation.errors[0]?.message;
+  const canSave =
+    validation.valid &&
+    isDirty &&
+    !saveRecipe.isPending &&
+    !isLoadingRecipe;
+  const saveStatus =
+    saveRecipe.isPending ? "Saving…"
+    : saveRecipe.error ? saveRecipe.error.message
+    : invalidReason ? invalidReason
+    : !isDirty && recipeId ? "Saved"
+    : "Ready to save";
 
   const isValidConnection = useCallback<IsValidConnection<RecipeEdge>>(
     (connection) => isRecipeConnectionValid(connection, nodes, edges),
     [edges, nodes],
+  );
+
+  const updateNodeLabel = useCallback(
+    (nodeId: string, label: string) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === nodeId
+            ? { ...node, data: { ...node.data, label } }
+            : node,
+        ),
+      );
+    },
+    [setNodes],
   );
 
   const connectNodes = useCallback(
@@ -223,12 +345,7 @@ function RecipeBuilder() {
         x: pointer.clientX,
         y: pointer.clientY,
       });
-      const node = createRecipeNode({
-        id,
-        type,
-        position,
-        origin: [0, 0.5],
-      });
+      const node = createRecipeNode({ id, type, position });
 
       setNodes((currentNodes) => [...currentNodes, node]);
       setEdges((currentEdges) =>
@@ -268,6 +385,25 @@ function RecipeBuilder() {
     setNodes((currentNodes) => [...currentNodes, node]);
   }
 
+  if (loadedRecipe.isError) {
+    return (
+      <section className="recipe-builder-message" aria-labelledby="recipe-load-title">
+        <h1 id="recipe-load-title">Recipe unavailable</h1>
+        <p>{loadedRecipe.error.message}</p>
+        <Link className="back-link" to="/">Back to home</Link>
+      </section>
+    );
+  }
+
+  if (isLoadingRecipe) {
+    return (
+      <section className="recipe-builder-message" aria-live="polite">
+        <div className="spinner" aria-hidden="true" />
+        <p>Loading recipe…</p>
+      </section>
+    );
+  }
+
   return (
     <section className="recipe-builder" aria-labelledby="recipe-builder-title">
       <header className="recipe-builder-header">
@@ -283,7 +419,27 @@ function RecipeBuilder() {
             maxLength={200}
           />
         </label>
-        <p className="draft-status">Local draft · not saved</p>
+        <div className="recipe-save-controls">
+          <p
+            className={`draft-status${invalidReason ? " draft-status--invalid" : ""}`}
+            aria-live="polite"
+          >
+            {saveStatus}
+          </p>
+          <button
+            className="save-recipe-button"
+            type="button"
+            disabled={!canSave}
+            title={invalidReason}
+            onClick={() => {
+              if (validation.valid) {
+                saveRecipe.mutate(validation.document);
+              }
+            }}
+          >
+            {saveRecipe.isPending ? "Saving…" : "Save"}
+          </button>
+        </div>
       </header>
 
       <div className="recipe-builder-toolbar">
@@ -314,44 +470,123 @@ function RecipeBuilder() {
       </div>
 
       <div className="recipe-canvas" ref={canvasRef}>
-        <ReactFlow<RecipeNode, RecipeEdge>
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={connectNodes}
-          onConnectEnd={connectToNewNode}
-          isValidConnection={isValidConnection}
-          defaultEdgeOptions={{
-            type: "smoothstep",
-            markerEnd: { type: MarkerType.ArrowClosed },
-          }}
-          fitView
-          fitViewOptions={{ padding: 0.25 }}
-          minZoom={0.35}
-          deleteKeyCode={["Backspace", "Delete"]}
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={24}
-            size={1.4}
-            color="#c9c8bb"
-          />
-          <Controls position="bottom-right" showInteractive={false} />
-          <MiniMap
-            position="bottom-left"
-            nodeColor={(node) =>
-              node.type === "operation" ? "#bc5b38" : "#55795b"
-            }
-            maskColor="rgb(244 241 232 / 70%)"
-            pannable
-            zoomable
-          />
-        </ReactFlow>
+        <RecipeNodeLabelContext.Provider value={updateNodeLabel}>
+          <ReactFlow<RecipeNode, RecipeEdge>
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={connectNodes}
+            onConnectEnd={connectToNewNode}
+            isValidConnection={isValidConnection}
+            defaultEdgeOptions={{
+              type: "smoothstep",
+              markerEnd: { type: MarkerType.ArrowClosed },
+            }}
+            fitView
+            fitViewOptions={{ padding: 0.25 }}
+            minZoom={0.35}
+            deleteKeyCode={["Backspace", "Delete"]}
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={24}
+              size={1.4}
+              color="#c9c8bb"
+            />
+            <Controls position="bottom-right" showInteractive={false} />
+            <MiniMap
+              position="bottom-left"
+              nodeColor={(node) =>
+                node.type === "operation" ? "#bc5b38" : "#55795b"
+              }
+              maskColor="rgb(244 241 232 / 70%)"
+              pannable
+              zoomable
+            />
+          </ReactFlow>
+        </RecipeNodeLabelContext.Provider>
       </div>
     </section>
   );
+}
+
+function buildRecipeDocument(
+  name: string,
+  nodes: RecipeNode[],
+  edges: RecipeEdge[],
+): RecipeDocument {
+  return {
+    name,
+    foodStates: nodes.filter(isFoodStateNode).map((node) => ({
+      id: node.id,
+      name: node.data.label,
+      position: node.position,
+    })),
+    operations: nodes.filter(isOperationNode).map((node) => ({
+      id: node.id,
+      type: node.data.label,
+      position: node.position,
+      inputs: edges
+        .filter((edge) => edge.target === node.id)
+        .map(({ source }) => ({ foodStateId: source })),
+      outputs: edges
+        .filter((edge) => edge.source === node.id)
+        .map(({ target }) => ({ foodStateId: target })),
+    })),
+  };
+}
+
+function toRecipeDocument(recipe: SavedRecipeDocument): RecipeDocument {
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...document } =
+    recipe;
+  return document;
+}
+
+function toFlowGraph(
+  recipe: RecipeDocument,
+): { nodes: RecipeNode[]; edges: RecipeEdge[] } {
+  return {
+    nodes: [
+      ...recipe.foodStates.map((foodState) =>
+        createRecipeNode({
+          id: foodState.id,
+          type: "foodState",
+          position: foodState.position,
+          label: foodState.name,
+        }),
+      ),
+      ...recipe.operations.map((operation) =>
+        createRecipeNode({
+          id: operation.id,
+          type: "operation",
+          position: operation.position,
+          label: operation.type,
+        }),
+      ),
+    ],
+    edges: recipe.operations.flatMap((operation) => [
+      ...operation.inputs.map(({ foodStateId }) =>
+        createRecipeEdge({ source: foodStateId, target: operation.id }),
+      ),
+      ...operation.outputs.map(({ foodStateId }) =>
+        createRecipeEdge({ source: operation.id, target: foodStateId }),
+      ),
+    ]),
+  };
+}
+
+function documentFingerprint(document: RecipeDocument): string {
+  return JSON.stringify(document);
+}
+
+function isFoodStateNode(node: RecipeNode): node is FoodStateNode {
+  return node.type === "foodState";
+}
+
+function isOperationNode(node: RecipeNode): node is OperationNode {
+  return node.type === "operation";
 }
 
 function FoodStateCard(props: NodeProps<FoodStateNode>) {
@@ -370,10 +605,11 @@ type RecipeNodeCardProps = {
 };
 
 function RecipeNodeCard({ id, data, selected, kind }: RecipeNodeCardProps) {
-  const { deleteElements, updateNodeData } = useReactFlow<
-    RecipeNode,
-    RecipeEdge
-  >();
+  const { deleteElements } = useReactFlow<RecipeNode, RecipeEdge>();
+  const updateNodeLabel = useContext(RecipeNodeLabelContext);
+  if (!updateNodeLabel) {
+    throw new Error("Recipe node cards require a label update provider");
+  }
   const isFoodState = kind === "foodState";
 
   return (
@@ -404,7 +640,7 @@ function RecipeNodeCard({ id, data, selected, kind }: RecipeNodeCardProps) {
           isFoodState ? "Ingredient or result name" : "Cooking step name"
         }
         placeholder={isFoodState ? "e.g. diced onions" : "e.g. sauté"}
-        onChange={(event) => updateNodeData(id, { label: event.target.value })}
+        onChange={(event) => updateNodeLabel(id, event.target.value)}
       />
       <p>{isFoodState ? "Food state" : "Operation"}</p>
       <Handle type="source" position={Position.Right} />

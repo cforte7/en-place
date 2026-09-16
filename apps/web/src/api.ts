@@ -3,6 +3,8 @@ import type {
   AuthenticatedSessionResponse,
   CreateUserRequest,
   LoginRequest,
+  RecipeDocument,
+  SavedRecipeDocument,
   UserResponse,
 } from "@en-place/contracts";
 
@@ -51,6 +53,30 @@ export function getCurrentUser() {
 
 export function logout() {
   return request<void>("/auth/session", { method: "DELETE" });
+}
+
+export function createRecipe(input: RecipeDocument) {
+  return request<SavedRecipeDocument>("/recipes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getRecipe(recipeId: string) {
+  return request<SavedRecipeDocument>(
+    `/recipes/${encodeURIComponent(recipeId)}`,
+    { method: "GET" },
+  );
+}
+
+export function updateRecipe(recipeId: string, input: RecipeDocument) {
+  return request<SavedRecipeDocument>(
+    `/recipes/${encodeURIComponent(recipeId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {

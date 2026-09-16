@@ -15,6 +15,14 @@ import {
   logoutHandler,
   logoutRoute,
 } from "./modules/auth/routes";
+import {
+  createRecipeHandler,
+  createRecipeRoute,
+  getRecipeHandler,
+  getRecipeRoute,
+  updateRecipeHandler,
+  updateRecipeRoute,
+} from "./modules/recipes/routes";
 import { createUserHandler, createUserRoute } from "./modules/users/routes";
 import { httpLogger } from "./observability/logging";
 
@@ -67,6 +75,9 @@ app.openapi(createUserRoute, createUserHandler);
 app.openapi(loginRoute, loginHandler);
 app.openapi(getCurrentUserRoute, getCurrentUserHandler);
 app.openapi(logoutRoute, logoutHandler);
+app.openapi(createRecipeRoute, createRecipeHandler);
+app.openapi(getRecipeRoute, getRecipeHandler);
+app.openapi(updateRecipeRoute, updateRecipeHandler);
 
 export const openApiDocumentConfig = {
   openapi: "3.0.0",

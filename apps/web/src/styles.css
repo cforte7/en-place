@@ -402,6 +402,22 @@ button:disabled {
   background: #eeece3;
 }
 
+.recipe-builder-message {
+  display: grid;
+  min-height: 600px;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: #697066;
+  background: #eeece3;
+  text-align: center;
+}
+
+.recipe-builder-message h1,
+.recipe-builder-message p {
+  margin: 0;
+}
+
 .recipe-builder-header {
   display: flex;
   align-items: center;
@@ -467,6 +483,39 @@ button:disabled {
   color: #8b7f73;
   font-size: 0.78rem;
   font-weight: 600;
+}
+
+.recipe-save-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.draft-status--invalid {
+  color: #963d29;
+}
+
+.save-recipe-button {
+  min-height: 38px;
+  padding: 8px 16px;
+  border: 1px solid #a94d2e;
+  border-radius: 10px;
+  color: #fffdf7;
+  background: #bc5b38;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.save-recipe-button:hover:not(:disabled) {
+  background: #a94d2e;
+}
+
+.save-recipe-button:disabled {
+  border-color: #ccc8bc;
+  color: #908e85;
+  background: #e4e1d8;
+  cursor: not-allowed;
 }
 
 .recipe-builder-toolbar {
@@ -665,7 +714,7 @@ button:disabled {
     width: 100%;
   }
 
-  .draft-status {
+  .recipe-save-controls {
     margin-left: auto;
   }
 

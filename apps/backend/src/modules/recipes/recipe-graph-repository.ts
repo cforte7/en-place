@@ -1,3 +1,5 @@
+import type { RecipeDocument } from "@en-place/contracts";
+
 import { and, asc, eq } from "drizzle-orm";
 
 import { database, type Database } from "../../database";
@@ -7,6 +9,7 @@ import {
   operationOutputs,
   operations,
   recipes,
+  type Recipe,
   type FoodState,
   type NewFoodState,
   type NewOperation,
@@ -19,21 +22,37 @@ import type { RecipeGraph } from "./recipe-graph";
 export type RecipeGraphTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export type CreateFoodStateValues = Pick<NewFoodState, "name"> &
-  Partial<Pick<NewFoodState, "description" | "metadata">>;
+  Partial<
+    Pick<NewFoodState, "description" | "metadata" | "positionX" | "positionY">
+  >;
 export type UpdateFoodStateValues = Partial<
-  Pick<NewFoodState, "name" | "description" | "metadata">
+  Pick<
+    NewFoodState,
+    "name" | "description" | "metadata" | "positionX" | "positionY"
+  >
 >;
 export type CreateOperationValues = Pick<NewOperation, "type"> &
   Partial<
     Pick<
       NewOperation,
-      "name" | "instructions" | "estimatedDurationSeconds" | "config"
+      | "name"
+      | "instructions"
+      | "estimatedDurationSeconds"
+      | "config"
+      | "positionX"
+      | "positionY"
     >
   >;
 export type UpdateOperationValues = Partial<
   Pick<
     NewOperation,
-    "type" | "name" | "instructions" | "estimatedDurationSeconds" | "config"
+    | "type"
+    | "name"
+    | "instructions"
+    | "estimatedDurationSeconds"
+    | "config"
+    | "positionX"
+    | "positionY"
   >
 >;
 
@@ -51,14 +70,27 @@ export async function loadRecipeGraph(recipeId: string): Promise<RecipeGraph | n
   );
 }
 
+export async function loadOwnedRecipeGraph(
+  ownerId: string,
+  recipeId: string,
+): Promise<RecipeGraph | null> {
+  return database.transaction((transaction) =>
+    new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId, ownerId),
+  );
+}
+
 export class RecipeGraphRepository {
   constructor(private readonly transaction: RecipeGraphTransaction) {}
 
-  async loadRecipeGraph(recipeId: string): Promise<RecipeGraph | null> {
+  async loadRecipeGraph(recipeId: string, ownerId?: string): Promise<RecipeGraph | null> {
     const [recipe] = await this.transaction
       .select()
       .from(recipes)
-      .where(eq(recipes.id, recipeId))
+      .where(
+        ownerId ?
+          and(eq(recipes.id, recipeId), eq(recipes.ownerId, ownerId))
+        : eq(recipes.id, recipeId),
+      )
       .limit(1);
 
     if (!recipe) {
@@ -93,6 +125,85 @@ export class RecipeGraphRepository {
       inputs,
       outputs,
     };
+  }
+
+  async createRecipe(ownerId: string, name: string): Promise<Recipe> {
+    const [recipe] = await this.transaction
+      .insert(recipes)
+      .values({ ownerId, name })
+      .returning();
+    return requireRow(recipe, "Failed to create recipe");
+  }
+
+  async updateOwnedRecipe(
+    ownerId: string,
+    recipeId: string,
+    name: string,
+  ): Promise<Recipe | null> {
+    const [recipe] = await this.transaction
+      .update(recipes)
+      .set({ name, updatedAt: new Date() })
+      .where(and(eq(recipes.id, recipeId), eq(recipes.ownerId, ownerId)))
+      .returning();
+    return recipe ?? null;
+  }
+
+  async replaceRecipeGraphRows(
+    recipeId: string,
+    document: RecipeDocument,
+  ): Promise<void> {
+    await this.transaction.delete(operations).where(eq(operations.recipeId, recipeId));
+    await this.transaction.delete(foodStates).where(eq(foodStates.recipeId, recipeId));
+
+    if (document.foodStates.length > 0) {
+      await this.transaction.insert(foodStates).values(
+        document.foodStates.map((foodState) => ({
+          id: foodState.id,
+          recipeId,
+          name: foodState.name,
+          positionX: foodState.position.x,
+          positionY: foodState.position.y,
+        })),
+      );
+    }
+
+    if (document.operations.length === 0) {
+      return;
+    }
+
+    await this.transaction.insert(operations).values(
+      document.operations.map((operation) => ({
+        id: operation.id,
+        recipeId,
+        type: operation.type,
+        positionX: operation.position.x,
+        positionY: operation.position.y,
+      })),
+    );
+
+    const inputRows = document.operations.flatMap((operation) =>
+      operation.inputs.map(({ foodStateId }, position) => ({
+        recipeId,
+        operationId: operation.id,
+        foodStateId,
+        position,
+      })),
+    );
+    if (inputRows.length > 0) {
+      await this.transaction.insert(operationInputs).values(inputRows);
+    }
+
+    const outputRows = document.operations.flatMap((operation) =>
+      operation.outputs.map(({ foodStateId }, position) => ({
+        recipeId,
+        operationId: operation.id,
+        foodStateId,
+        position,
+      })),
+    );
+    if (outputRows.length > 0) {
+      await this.transaction.insert(operationOutputs).values(outputRows);
+    }
   }
 
   async createFoodState(

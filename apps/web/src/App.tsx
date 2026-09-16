@@ -98,6 +98,7 @@ export function App() {
         <Route index element={<HomePage user={user} />} />
         <Route path="account" element={<AccountPage user={user} />} />
         <Route path="recipes/new" element={<RecipeBuilderPage />} />
+        <Route path="recipes/:recipeId" element={<RecipeBuilderPage />} />
       </Route>
       <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
     </Routes>
@@ -228,7 +229,7 @@ function AppShell({
   onSignOut: () => void;
 }) {
   const location = useLocation();
-  const isRecipeBuilder = location.pathname === "/recipes/new";
+  const isRecipeBuilder = location.pathname.startsWith("/recipes/");
 
   return (
     <div className="app-shell">
