@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -14,16 +15,22 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { users } from "./users";
+
 export const recipes = pgTable(
   "recipes",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("recipes_owner_id_index").on(table.ownerId),
     check("recipes_name_not_blank", sql`length(trim(${table.name})) > 0`),
   ],
 );
@@ -36,6 +43,8 @@ export const foodStates = pgTable(
       .notNull()
       .references(() => recipes.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    positionX: doublePrecision("position_x").default(0).notNull(),
+    positionY: doublePrecision("position_y").default(0).notNull(),
     description: text("description"),
     metadata: jsonb("metadata")
       .$type<Record<string, unknown>>()
@@ -59,6 +68,8 @@ export const operations = pgTable(
       .notNull()
       .references(() => recipes.id, { onDelete: "cascade" }),
     type: text("type").notNull(),
+    positionX: doublePrecision("position_x").default(0).notNull(),
+    positionY: doublePrecision("position_y").default(0).notNull(),
     name: text("name"),
     instructions: text("instructions"),
     estimatedDurationSeconds: integer("estimated_duration_seconds"),
