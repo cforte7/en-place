@@ -7,7 +7,13 @@ import {
 import { sql } from "drizzle-orm";
 
 import { database } from "../../database";
-import type { FoodState, Operation, OperationInput, OperationOutput } from "../../database/schema";
+import type {
+  FoodState,
+  Operation,
+  OperationInput,
+  OperationOutput,
+  Recipe,
+} from "../../database/schema";
 import type { UserId } from "../users/user-id";
 import {
   RecipeGraphRepository,
@@ -37,7 +43,8 @@ export class RecipeGraphNotFoundError extends Error {
 
 export class RecipeGraphEntityNotFoundError extends Error {
   constructor(
-    readonly entity: "foodState" | "operation" | "operationInput" | "operationOutput",
+    readonly entity:
+      "foodState" | "operation" | "operationInput" | "operationOutput",
     readonly id: string,
   ) {
     super(`Recipe graph ${entity} not found: ${id}`);
@@ -60,6 +67,12 @@ export class InvalidRecipeDocumentError extends Error {
 }
 
 class RecipeGraphService {
+  listOwned(ownerId: UserId): Promise<Recipe[]> {
+    return database.transaction((transaction) =>
+      new RecipeGraphRepository(transaction).listOwnedRecipes(ownerId),
+    );
+  }
+
   load(recipeId: string): Promise<RecipeGraph | null> {
     return database.transaction((transaction) =>
       new RecipeGraphRepository(transaction).loadRecipeGraph(recipeId),
@@ -96,7 +109,11 @@ class RecipeGraphService {
       );
 
       const repository = new RecipeGraphRepository(transaction);
-      const recipe = await repository.updateOwnedRecipe(ownerId, recipeId, document.name);
+      const recipe = await repository.updateOwnedRecipe(
+        ownerId,
+        recipeId,
+        document.name,
+      );
       if (!recipe) {
         throw new RecipeGraphNotFoundError(recipeId);
       }
@@ -106,7 +123,10 @@ class RecipeGraphService {
     });
   }
 
-  createFoodState(recipeId: string, values: CreateFoodStateValues): Promise<FoodState> {
+  createFoodState(
+    recipeId: string,
+    values: CreateFoodStateValues,
+  ): Promise<FoodState> {
     return this.withLockedGraphMutation(recipeId, (repository) =>
       repository.createFoodState(recipeId, values),
     );
@@ -119,7 +139,11 @@ class RecipeGraphService {
   ): Promise<FoodState> {
     return database.transaction(async (transaction) => {
       const repository = new RecipeGraphRepository(transaction);
-      const foodState = await repository.updateFoodState(recipeId, foodStateId, values);
+      const foodState = await repository.updateFoodState(
+        recipeId,
+        foodStateId,
+        values,
+      );
       if (!foodState) {
         throw new RecipeGraphEntityNotFoundError("foodState", foodStateId);
       }
@@ -137,7 +161,10 @@ class RecipeGraphService {
     });
   }
 
-  createOperation(recipeId: string, request: CreateOperationRequest): Promise<Operation> {
+  createOperation(
+    recipeId: string,
+    request: CreateOperationRequest,
+  ): Promise<Operation> {
     requireConnections("inputs", request.inputs);
     requireConnections("outputs", request.outputs);
     const { inputs, outputs, ...values } = request;
@@ -157,7 +184,11 @@ class RecipeGraphService {
   ): Promise<Operation> {
     return database.transaction(async (transaction) => {
       const repository = new RecipeGraphRepository(transaction);
-      const operation = await repository.updateOperation(recipeId, operationId, values);
+      const operation = await repository.updateOperation(
+        recipeId,
+        operationId,
+        values,
+      );
       if (!operation) {
         throw new RecipeGraphEntityNotFoundError("operation", operationId);
       }
@@ -284,7 +315,9 @@ function requireConnections(
   values: OperationConnectionValues[],
 ): void {
   if (values.length === 0) {
-    throw new TypeError(`Operation ${connection} must contain at least one food state`);
+    throw new TypeError(
+      `Operation ${connection} must contain at least one food state`,
+    );
   }
 }
 

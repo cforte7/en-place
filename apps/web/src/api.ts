@@ -4,6 +4,7 @@ import type {
   CreateUserRequest,
   LoginRequest,
   RecipeDocument,
+  RecipeListResponse,
   SavedRecipeDocument,
   UserResponse,
 } from "@en-place/contracts";
@@ -55,6 +56,10 @@ export function logout() {
   return request<void>("/auth/session", { method: "DELETE" });
 }
 
+export function listRecipes() {
+  return request<RecipeListResponse>("/recipes", { method: "GET" });
+}
+
 export function createRecipe(input: RecipeDocument) {
   return request<SavedRecipeDocument>("/recipes", {
     method: "POST",
@@ -93,9 +98,9 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
 
   if (!response.ok) {
-    const payload = await response
+    const payload = (await response
       .json()
-      .catch(() => null) as ApiErrorResponse | null;
+      .catch(() => null)) as ApiErrorResponse | null;
     throw new ApiError(
       payload?.error.message ?? "The server could not complete the request.",
       response.status,

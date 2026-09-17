@@ -1,4 +1,11 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import type { RecipeDocument } from "@en-place/contracts";
 import { eq } from "drizzle-orm";
 
@@ -44,8 +51,12 @@ afterEach(async () => {
 describe.serial("recipeGraphService", () => {
   test("creates and loads an operation atomically", async () => {
     const recipe = await createRecipe("Atomic operation");
-    const input = await recipeGraphService.createFoodState(recipe.id, { name: "raw" });
-    const output = await recipeGraphService.createFoodState(recipe.id, { name: "cooked" });
+    const input = await recipeGraphService.createFoodState(recipe.id, {
+      name: "raw",
+    });
+    const output = await recipeGraphService.createFoodState(recipe.id, {
+      name: "cooked",
+    });
 
     const operation = await recipeGraphService.createOperation(recipe.id, {
       type: "cook",
@@ -78,9 +89,15 @@ describe.serial("recipeGraphService", () => {
 
   test("rolls back a mutation that would create a cycle", async () => {
     const recipe = await createRecipe("Cycle rollback");
-    const a = await recipeGraphService.createFoodState(recipe.id, { name: "A" });
-    const b = await recipeGraphService.createFoodState(recipe.id, { name: "B" });
-    const c = await recipeGraphService.createFoodState(recipe.id, { name: "C" });
+    const a = await recipeGraphService.createFoodState(recipe.id, {
+      name: "A",
+    });
+    const b = await recipeGraphService.createFoodState(recipe.id, {
+      name: "B",
+    });
+    const c = await recipeGraphService.createFoodState(recipe.id, {
+      name: "C",
+    });
     await recipeGraphService.createOperation(recipe.id, {
       type: "first",
       inputs: [{ foodStateId: a.id }],
@@ -107,8 +124,12 @@ describe.serial("recipeGraphService", () => {
 
   test("rolls back removing an operation's last input", async () => {
     const recipe = await createRecipe("Required input");
-    const input = await recipeGraphService.createFoodState(recipe.id, { name: "input" });
-    const output = await recipeGraphService.createFoodState(recipe.id, { name: "output" });
+    const input = await recipeGraphService.createFoodState(recipe.id, {
+      name: "input",
+    });
+    const output = await recipeGraphService.createFoodState(recipe.id, {
+      name: "output",
+    });
     const operation = await recipeGraphService.createOperation(recipe.id, {
       type: "transform",
       inputs: [{ foodStateId: input.id }],
@@ -116,7 +137,11 @@ describe.serial("recipeGraphService", () => {
     });
 
     await expect(
-      recipeGraphService.removeOperationInput(recipe.id, operation.id, input.id),
+      recipeGraphService.removeOperationInput(
+        recipe.id,
+        operation.id,
+        input.id,
+      ),
     ).rejects.toBeInstanceOf(RecipeGraphValidationError);
 
     const graph = await recipeGraphService.load(recipe.id);
@@ -126,12 +151,18 @@ describe.serial("recipeGraphService", () => {
   test("rejects a connection across recipe boundaries", async () => {
     const firstRecipe = await createRecipe("First recipe");
     const secondRecipe = await createRecipe("Second recipe");
-    const firstFoodState = await recipeGraphService.createFoodState(firstRecipe.id, {
-      name: "first",
-    });
-    const secondFoodState = await recipeGraphService.createFoodState(secondRecipe.id, {
-      name: "second",
-    });
+    const firstFoodState = await recipeGraphService.createFoodState(
+      firstRecipe.id,
+      {
+        name: "first",
+      },
+    );
+    const secondFoodState = await recipeGraphService.createFoodState(
+      secondRecipe.id,
+      {
+        name: "second",
+      },
+    );
 
     await expect(
       recipeGraphService.createOperation(firstRecipe.id, {
@@ -147,9 +178,15 @@ describe.serial("recipeGraphService", () => {
 
   test("rejects a second producer for a food state", async () => {
     const recipe = await createRecipe("One producer");
-    const firstInput = await recipeGraphService.createFoodState(recipe.id, { name: "first" });
-    const secondInput = await recipeGraphService.createFoodState(recipe.id, { name: "second" });
-    const output = await recipeGraphService.createFoodState(recipe.id, { name: "output" });
+    const firstInput = await recipeGraphService.createFoodState(recipe.id, {
+      name: "first",
+    });
+    const secondInput = await recipeGraphService.createFoodState(recipe.id, {
+      name: "second",
+    });
+    const output = await recipeGraphService.createFoodState(recipe.id, {
+      name: "output",
+    });
     await recipeGraphService.createOperation(recipe.id, {
       type: "first",
       inputs: [{ foodStateId: firstInput.id }],
@@ -173,11 +210,18 @@ describe.serial("recipeGraphService", () => {
     const created = await recipeGraphService.create(ownerId, document);
     createdRecipeIds.push(created.recipe.id);
 
-    expect(created.foodStates.map(({ positionX, positionY }) => [positionX, positionY]))
-      .toEqual([
-        [10.25, 20.5],
-        [610.125, 20.5],
-      ]);
+    expect(created.foodStates).toHaveLength(document.foodStates.length);
+    expect(created.foodStates).toEqual(
+      expect.arrayContaining(
+        document.foodStates.map((foodState) =>
+          expect.objectContaining({
+            id: foodState.id,
+            positionX: foodState.position.x,
+            positionY: foodState.position.y,
+          }),
+        ),
+      ),
+    );
     expect(created.operations[0]).toMatchObject({
       positionX: 310.75,
       positionY: 20.5,
@@ -196,15 +240,65 @@ describe.serial("recipeGraphService", () => {
     };
     await recipeGraphService.replace(ownerId, created.recipe.id, replacement);
 
-    const loaded = await recipeGraphService.loadOwned(ownerId, created.recipe.id);
+    const loaded = await recipeGraphService.loadOwned(
+      ownerId,
+      created.recipe.id,
+    );
     expect(loaded?.recipe.name).toBe("Moved recipe");
-    expect(loaded?.foodStates.map(({ positionX, positionY }) => [positionX, positionY]))
-      .toEqual([
-        [10.75, 120.75],
-        [611.625, 120.75],
-      ]);
+    expect(loaded?.foodStates).toHaveLength(replacement.foodStates.length);
+    expect(loaded?.foodStates).toEqual(
+      expect.arrayContaining(
+        replacement.foodStates.map((foodState) =>
+          expect.objectContaining({
+            id: foodState.id,
+            positionX: foodState.position.x,
+            positionY: foodState.position.y,
+          }),
+        ),
+      ),
+    );
     expect(loaded?.inputs).toHaveLength(1);
     expect(loaded?.outputs).toHaveLength(1);
+  });
+
+  test("lists only the owner's recipes with the most recently updated first", async () => {
+    const olderRecipe = await createRecipe("Older recipe");
+    const newerRecipe = await createRecipe("Newer recipe");
+    const [otherOwner] = await database
+      .insert(users)
+      .values({
+        email: `listed-recipe-owner-${crypto.randomUUID()}@example.com`,
+        passwordHash: "integration-test",
+      })
+      .returning({ id: users.id });
+    if (!otherOwner) {
+      throw new Error("Failed to create recipe list test owner");
+    }
+
+    try {
+      await database
+        .update(recipes)
+        .set({ updatedAt: new Date("2025-01-01T00:00:00.000Z") })
+        .where(eq(recipes.id, olderRecipe.id));
+      await database
+        .update(recipes)
+        .set({ updatedAt: new Date("2025-02-01T00:00:00.000Z") })
+        .where(eq(recipes.id, newerRecipe.id));
+      await database.insert(recipes).values({
+        ownerId: otherOwner.id,
+        name: "Another user's recipe",
+        updatedAt: new Date("2025-03-01T00:00:00.000Z"),
+      });
+
+      const listedRecipes = await recipeGraphService.listOwned(ownerId);
+
+      expect(listedRecipes.map(({ id }) => id)).toEqual([
+        newerRecipe.id,
+        olderRecipe.id,
+      ]);
+    } finally {
+      await database.delete(users).where(eq(users.id, otherOwner.id));
+    }
   });
 
   test("rejects an invalid aggregate replacement without changing the saved graph", async () => {
@@ -224,7 +318,10 @@ describe.serial("recipeGraphService", () => {
       recipeGraphService.replace(ownerId, created.recipe.id, invalid),
     ).rejects.toBeInstanceOf(InvalidRecipeDocumentError);
 
-    const loaded = await recipeGraphService.loadOwned(ownerId, created.recipe.id);
+    const loaded = await recipeGraphService.loadOwned(
+      ownerId,
+      created.recipe.id,
+    );
     expect(loaded?.recipe.name).toBe("Valid aggregate");
     expect(loaded?.outputs).toHaveLength(1);
   });

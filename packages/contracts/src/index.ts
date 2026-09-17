@@ -123,37 +123,54 @@ export const savedRecipeDocumentSchema = recipeDocumentSchema.extend({
 
 export type SavedRecipeDocument = z.infer<typeof savedRecipeDocumentSchema>;
 
+export const recipeSummarySchema = z
+  .object({
+    id: z.uuid(),
+    name: recipeDocumentSchema.shape.name,
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export type RecipeSummary = z.infer<typeof recipeSummarySchema>;
+
+export const recipeListResponseSchema = z.array(recipeSummarySchema);
+
+export type RecipeListResponse = z.infer<typeof recipeListResponseSchema>;
+
 export type RecipeDocumentValidationError =
   | { code: "INVALID_DOCUMENT"; message: string; path: PropertyKey[] }
   | { code: "DUPLICATE_NODE_ID"; nodeId: string; message: string }
   | {
-    code: "MISSING_FOOD_STATE";
-    operationId: string;
-    foodStateId: string;
-    message: string;
-  }
+      code: "MISSING_FOOD_STATE";
+      operationId: string;
+      foodStateId: string;
+      message: string;
+    }
   | {
-    code: "DUPLICATE_CONNECTION";
-    connection: "input" | "output";
-    operationId: string;
-    foodStateId: string;
-    message: string;
-  }
+      code: "DUPLICATE_CONNECTION";
+      connection: "input" | "output";
+      operationId: string;
+      foodStateId: string;
+      message: string;
+    }
   | { code: "OPERATION_HAS_NO_INPUTS"; operationId: string; message: string }
   | { code: "OPERATION_HAS_NO_OUTPUTS"; operationId: string; message: string }
   | {
-    code: "MULTIPLE_PRODUCERS";
-    foodStateId: string;
-    operationIds: [string, string];
-    message: string;
-  }
+      code: "MULTIPLE_PRODUCERS";
+      foodStateId: string;
+      operationIds: [string, string];
+      message: string;
+    }
   | { code: "CYCLE_DETECTED"; message: string };
 
 export type RecipeDocumentValidationResult =
   | { valid: true; document: RecipeDocument }
   | { valid: false; errors: RecipeDocumentValidationError[] };
 
-export function validateRecipeDocument(input: unknown): RecipeDocumentValidationResult {
+export function validateRecipeDocument(
+  input: unknown,
+): RecipeDocumentValidationResult {
   const parsed = recipeDocumentSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -224,7 +241,8 @@ export function validateRecipeDocument(input: unknown): RecipeDocumentValidation
           code: "MULTIPLE_PRODUCERS",
           foodStateId,
           operationIds: [existingProducerId, operation.id],
-          message: "An ingredient or result can only be produced by one cooking step.",
+          message:
+            "An ingredient or result can only be produced by one cooking step.",
         });
       } else {
         producerByFoodStateId.set(foodStateId, operation.id);
@@ -251,7 +269,9 @@ export function validateRecipeDocument(input: unknown): RecipeDocumentValidation
     });
   }
 
-  return errors.length === 0 ? { valid: true, document } : { valid: false, errors };
+  return errors.length === 0
+    ? { valid: true, document }
+    : { valid: false, errors };
 }
 
 function validateConnections(
@@ -269,7 +289,8 @@ function validateConnections(
         code: "MISSING_FOOD_STATE",
         operationId,
         foodStateId,
-        message: "A connection points to an ingredient or result that does not exist.",
+        message:
+          "A connection points to an ingredient or result that does not exist.",
       });
     }
     if (connectedIds.has(foodStateId)) {

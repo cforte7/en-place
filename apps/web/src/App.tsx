@@ -20,6 +20,7 @@ import {
   createAccount,
   getCurrentUser,
   getSessionToken,
+  listRecipes,
   login,
   logout,
   saveSessionToken,
@@ -48,7 +49,10 @@ export function App() {
   });
 
   useEffect(() => {
-    if (currentUser.error instanceof ApiError && currentUser.error.status === 401) {
+    if (
+      currentUser.error instanceof ApiError &&
+      currentUser.error.status === 401
+    ) {
       clearSessionToken();
       setToken(null);
       queryClient.removeQueries({ queryKey: currentUserQueryKey });
@@ -66,41 +70,47 @@ export function App() {
   }
 
   const user = currentUser.data;
-  const restoreError = token && currentUser.error
-    ? currentUser.error.message
-    : undefined;
+  const restoreError =
+    token && currentUser.error ? currentUser.error.message : undefined;
 
   return (
     <Routes>
       <Route
         path="/login"
-        element={user
-          ? <Navigate to="/" replace />
-          : (
+        element={
+          user ? (
+            <Navigate to="/" replace />
+          ) : (
             <AuthenticationPage
               onAuthenticated={finishAuthentication}
               restoreError={restoreError}
             />
-          )}
+          )
+        }
       />
       <Route
         path="/"
-        element={user
-          ? (
+        element={
+          user ? (
             <AppShell
               user={user}
               isSigningOut={signOut.isPending}
               onSignOut={() => signOut.mutate()}
             />
+          ) : (
+            <Navigate to="/login" replace />
           )
-          : <Navigate to="/login" replace />}
+        }
       >
         <Route index element={<HomePage user={user} />} />
         <Route path="account" element={<AccountPage user={user} />} />
         <Route path="recipes/new" element={<RecipeBuilderPage />} />
         <Route path="recipes/:recipeId" element={<RecipeBuilderPage />} />
       </Route>
-      <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
+      <Route
+        path="*"
+        element={<Navigate to={user ? "/" : "/login"} replace />}
+      />
     </Routes>
   );
 }
@@ -201,17 +211,29 @@ function AuthenticationPage({
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
               required
             />
           </label>
 
-          {error && <p className="form-error" role="alert">{error}</p>}
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
 
-          <button className="primary-button" type="submit" disabled={authentication.isPending}>
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={authentication.isPending}
+          >
             {authentication.isPending
               ? "Please wait…"
-              : mode === "login" ? "Sign in" : "Create account"}
+              : mode === "login"
+                ? "Sign in"
+                : "Create account"}
           </button>
         </form>
       </section>
@@ -234,16 +256,31 @@ function AppShell({
   return (
     <div className="app-shell">
       <header className="app-header">
-        <NavLink className="brand" to="/">En Place</NavLink>
+        <NavLink className="brand" to="/">
+          En Place
+        </NavLink>
         <nav aria-label="Main navigation">
-          <NavLink to="/" end>Home</NavLink>
+          <NavLink to="/" end>
+            Home
+          </NavLink>
           <NavLink to="/account">Account</NavLink>
         </nav>
-        <button className="text-button" type="button" onClick={onSignOut} disabled={isSigningOut}>
+        <button
+          className="text-button"
+          type="button"
+          onClick={onSignOut}
+          disabled={isSigningOut}
+        >
           {isSigningOut ? "Signing out…" : "Sign out"}
         </button>
       </header>
-      <main className={isRecipeBuilder ? "page-content recipe-builder-content" : "page-content"}>
+      <main
+        className={
+          isRecipeBuilder
+            ? "page-content recipe-builder-content"
+            : "page-content"
+        }
+      >
         <Outlet />
       </main>
     </div>
@@ -251,6 +288,13 @@ function AppShell({
 }
 
 function HomePage({ user }: { user: UserResponse | undefined }) {
+  const recipes = useQuery({
+    queryKey: ["recipes"],
+    queryFn: listRecipes,
+    enabled: user !== undefined,
+    retry: false,
+  });
+
   if (!user) {
     return null;
   }
@@ -259,18 +303,53 @@ function HomePage({ user }: { user: UserResponse | undefined }) {
     <section className="landing-page">
       <p className="eyebrow">Home</p>
       <h1>Welcome{user.displayName ? `, ${user.displayName}` : ""}.</h1>
-      <p className="lead">You are signed in to En Place.</p>
-      <Link className="create-recipe-button" to="/recipes/new">
-        <span aria-hidden="true">+</span>
-        Add a recipe
-      </Link>
-      <div className="status-card">
-        <span className="status-dot" aria-hidden="true" />
-        <div>
-          <strong>Current session</strong>
-          <p>{user.email}</p>
+      <p className="lead">
+        Open a recipe to continue building, or start something new.
+      </p>
+
+      <section
+        className="recipe-library"
+        aria-labelledby="recipe-library-heading"
+      >
+        <div className="recipe-library-heading">
+          <div>
+            <h2 id="recipe-library-heading">Your recipes</h2>
+            <p>Choose a recipe to open it in the builder.</p>
+          </div>
+          <Link className="create-recipe-button" to="/recipes/new">
+            <span aria-hidden="true">+</span>
+            Add a recipe
+          </Link>
         </div>
-      </div>
+
+        {recipes.isPending ? (
+          <p className="recipe-list-message">Loading your recipes…</p>
+        ) : recipes.error ? (
+          <p className="form-error" role="alert">
+            {recipes.error.message}
+          </p>
+        ) : recipes.data.length === 0 ? (
+          <p className="recipe-list-message">
+            You have no saved recipes yet. Add one to get started.
+          </p>
+        ) : (
+          <ul className="recipe-list">
+            {recipes.data.map((recipe) => (
+              <li key={recipe.id}>
+                <Link to={`/recipes/${recipe.id}`}>
+                  <span>
+                    <strong>{recipe.name}</strong>
+                    <small>Updated {formatDate(recipe.updatedAt)}</small>
+                  </span>
+                  <span className="recipe-list-arrow" aria-hidden="true">
+                    →
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </section>
   );
 }
@@ -285,11 +364,18 @@ function AccountPage({ user }: { user: UserResponse | undefined }) {
       <p className="eyebrow">Account</p>
       <h1>Your profile</h1>
       <dl className="profile-card">
-        <ProfileRow label="Display name" value={user.displayName ?? "Not set"} />
+        <ProfileRow
+          label="Display name"
+          value={user.displayName ?? "Not set"}
+        />
         <ProfileRow label="Email" value={user.email} />
         <ProfileRow
           label="Email verification"
-          value={user.emailVerifiedAt ? formatDate(user.emailVerifiedAt) : "Not verified"}
+          value={
+            user.emailVerifiedAt
+              ? formatDate(user.emailVerifiedAt)
+              : "Not verified"
+          }
         />
         <ProfileRow label="Member since" value={formatDate(user.createdAt)} />
       </dl>
@@ -316,5 +402,7 @@ function LoadingScreen() {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(value),
+  );
 }

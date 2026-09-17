@@ -1,6 +1,16 @@
-import type { SavedRecipeDocument } from "@en-place/contracts";
+import type { RecipeSummary, SavedRecipeDocument } from "@en-place/contracts";
 
+import type { Recipe } from "../../database/schema";
 import type { RecipeGraph } from "./recipe-graph";
+
+export function presentRecipeSummary(recipe: Recipe): RecipeSummary {
+  return {
+    id: recipe.id,
+    name: recipe.name,
+    createdAt: recipe.createdAt.toISOString(),
+    updatedAt: recipe.updatedAt.toISOString(),
+  };
+}
 
 export function presentRecipeGraph(graph: RecipeGraph): SavedRecipeDocument {
   return {
