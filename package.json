@@ -1,12 +1,11 @@
 {
   "name": "en-place",
-  "private": true,
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  },
   "packageManager": "bun@1.4.2",
-  "workspaces": [
-    "apps/backend",
-    "apps/web",
-    "packages/*"
-  ],
+  "private": true,
   "scripts": {
     "dev": "docker compose -f infra/compose.yaml up -d --wait postgres && bun run --parallel 'dev:*'",
     "dev:backend": "bun run --env-file=../../.env --cwd apps/backend dev",
@@ -22,8 +21,9 @@
     "db:check": "bun run --bun --env-file=../../.env --cwd apps/backend db:check",
     "db:studio": "bun run --bun --env-file=../../.env --cwd apps/backend db:studio"
   },
-  "devDependencies": {
-    "@types/bun": "^1.4.2",
-    "typescript": "^7.0.2"
-  }
+  "workspaces": [
+    "apps/backend",
+    "apps/web",
+    "packages/*"
+  ]
 }

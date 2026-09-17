@@ -18,6 +18,7 @@
     "@en-place/contracts": "workspace:*",
     "@hono/zod-openapi": "^1.6.3",
     "@logtape/logtape": "^2.3.4",
+    "@mastra/core": "^1.67.0",
     "drizzle-orm": "^1.0.0-rc.4",
     "hono": "^4.13.7",
     "zod": "^4.6.2"
