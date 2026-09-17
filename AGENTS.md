@@ -3,6 +3,19 @@
 Human-facing database instructions live in `docs/database.md`.
 Cooking graph data-model and mutation rules live in `docs/cooking-dag.md`.
 
+## Backend HTTP architecture
+
+- Treat `apps/backend/src/app.ts` as the HTTP composition root. It owns the `OpenAPIHono<AppEnvironment>` instance, global middleware, shared OpenAPI components, module registration, the OpenAPI document endpoint, and global not-found/error handlers.
+- Route modules must not import the application singleton or mutate it as an import side effect. Each module's `routes/index.ts` exports a `register<Module>Routes(app: OpenAPIHono<AppEnvironment>): void` function; `app.ts` imports and calls those functions explicitly so dependencies and registration order remain visible.
+- Keep process startup in `apps/backend/src/index.ts`. `app.ts` must remain importable without starting a server so tests and `export-openapi.ts` can use the same configured application.
+- Put one HTTP operation in each route file. Export its `createRoute` definition and a handler typed as `RouteHandler<typeof route, AppEnvironment>`, then pair them with `app.openapi(route, handler)` in the module's route registrar.
+- Use `AppEnvironment` as the source of truth for typed Hono context variables. Add shared request context there rather than introducing untyped context access.
+- Use schemas from `@en-place/contracts` for public request and response bodies. Colocate transport-only schemas such as path parameters with the owning module, consume validated input through `context.req.valid(...)`, and do not duplicate validation in handlers.
+- A protected operation must declare both its OpenAPI `security` requirement and `requireAuthentication` middleware. Authentication middleware populates the typed context values that handlers consume.
+- Route definitions must document every response status the handler or its middleware can return. Translate expected domain failures into those documented API responses at the HTTP boundary; allow unexpected errors to reach the global error handler.
+- Keep wire-format conversion in module `presentation.ts` functions instead of returning database rows or domain objects directly.
+- Keep handlers focused on HTTP concerns and orchestration. Direct typed-database access is acceptable for a small endpoint-specific operation; move reusable business rules or multi-step domain mutations into a module service, and isolate substantial persistence logic in a repository. Do not add service/repository layers that only forward arguments.
+
 ## Database ownership
 
 - PostgreSQL is the only application database.
