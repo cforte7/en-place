@@ -182,7 +182,7 @@ Authenticated `POST /recipe-imports/preview` accepts conventional recipe text an
 The Mastra workflow has two steps:
 
 1. The recipe ingestion agent extracts a structured candidate with symbolic food-state keys, broad operation types, source step references, and explicit warnings for ambiguity.
-2. Deterministic application code resolves keys to UUIDs, assigns topological graph positions, preserves source quantity text in connection metadata when needed, and runs `validateRecipeDocument`.
+2. Deterministic application code resolves keys to UUIDs, validates the DAG, uses ELK's rightward layered algorithm to assign non-overlapping graph positions, and preserves source quantity text in connection metadata when needed.
 
 The model does not generate database identifiers or graph coordinates and has no persistence tools. Configure its model with `RECIPE_INGESTION_MODEL`; the default is `openai/gpt-5-mini`, which requires `OPENAI_API_KEY`. `RECIPE_INGESTION_TIMEOUT_MS` controls the per-model-call timeout and defaults to 180 seconds.
 

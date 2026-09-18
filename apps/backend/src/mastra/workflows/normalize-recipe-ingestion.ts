@@ -1,3 +1,5 @@
+import ELK, { type ElkNode } from "elkjs";
+
 import {
   recipeDocumentSchema,
   validateRecipeDocument,
@@ -6,9 +8,12 @@ import {
   type RecipeIngestionPreview,
 } from "@en-place/contracts";
 
-const horizontalSpacing = 280;
-const verticalSpacing = 160;
-const verticalOffset = 100;
+const recipeNodeWidth = 220;
+const recipeNodeHeight = 116;
+const elkWorkerUrl = Bun.resolveSync(
+  "elkjs/lib/elk-worker.min.js",
+  import.meta.dir,
+);
 
 export class InvalidRecipeIngestionCandidateError extends Error {
   constructor(readonly reasons: string[]) {
@@ -17,10 +22,10 @@ export class InvalidRecipeIngestionCandidateError extends Error {
   }
 }
 
-export function normalizeRecipeIngestionCandidate(
+export async function normalizeRecipeIngestionCandidate(
   candidate: RecipeIngestionCandidate,
   createId: () => string = () => crypto.randomUUID(),
-): RecipeIngestionPreview {
+): Promise<RecipeIngestionPreview> {
   const errors: string[] = [];
   const foodStateByKey = uniqueByKey("food state", candidate.foodStates, errors);
   uniqueByKey("operation", candidate.operations, errors);
@@ -58,24 +63,12 @@ export function normalizeRecipeIngestionCandidate(
     throw new InvalidRecipeIngestionCandidateError(errors);
   }
 
-  const foodStateLayers = calculateFoodStateLayers(
-    candidate,
-    producerByFoodStateKey,
-  );
-  const operationLayers = calculateOperationLayers(candidate, foodStateLayers);
   const foodStateIdByKey = new Map(
     candidate.foodStates.map(({ key }) => [key, createId()]),
   );
-  const occupiedSlotsByLayer = new Map<number, number>();
-  const positionForLayer = (layer: number) => {
-    const slot = occupiedSlotsByLayer.get(layer) ?? 0;
-    occupiedSlotsByLayer.set(layer, slot + 1);
-    return {
-      x: layer * horizontalSpacing,
-      y: verticalOffset + slot * verticalSpacing,
-    };
-  };
-
+  const operationIdByKey = new Map(
+    candidate.operations.map(({ key }) => [key, createId()]),
+  );
   const document: RecipeDocument = recipeDocumentSchema.parse({
     name: candidate.name,
     description: candidate.description,
@@ -84,16 +77,16 @@ export function normalizeRecipeIngestionCandidate(
       name: foodState.name,
       description: foodState.description,
       metadata: {},
-      position: positionForLayer(requireValue(foodStateLayers, foodState.key)),
+      position: { x: 0, y: 0 },
     })),
     operations: candidate.operations.map((operation) => ({
-      id: createId(),
+      id: requireValue(operationIdByKey, operation.key),
       type: operation.type,
       name: operation.name,
       instructions: operation.instructions,
       estimatedDurationSeconds: operation.estimatedDurationSeconds,
       config: { sourceStepNumbers: operation.sourceStepNumbers },
-      position: positionForLayer(requireValue(operationLayers, operation.key)),
+      position: { x: 0, y: 0 },
       inputs: operation.inputs.map((connection) =>
         normalizeConnection(connection, foodStateIdByKey),
       ),
@@ -111,7 +104,7 @@ export function normalizeRecipeIngestionCandidate(
   }
 
   return {
-    recipe: validation.document,
+    recipe: await layoutRecipeDocument(validation.document),
     warnings: [...new Set(candidate.warnings)],
   };
 }
@@ -155,66 +148,64 @@ function validateConnections(
   }
 }
 
-function calculateFoodStateLayers(
-  candidate: RecipeIngestionCandidate,
-  producerByFoodStateKey: ReadonlyMap<string, string>,
-): Map<string, number> {
-  const foodStateLayers = new Map<string, number>();
-  for (const { key } of candidate.foodStates) {
-    if (!producerByFoodStateKey.has(key)) {
-      foodStateLayers.set(key, 0);
-    }
-  }
+async function layoutRecipeDocument(
+  document: RecipeDocument,
+): Promise<RecipeDocument> {
+  const layout = await new ELK({ workerUrl: elkWorkerUrl }).layout({
+    id: "recipe",
+    layoutOptions: {
+      "elk.algorithm": "layered",
+      "elk.direction": "RIGHT",
+      "elk.padding": "[top=40,left=40,bottom=40,right=40]",
+      "elk.spacing.nodeNode": "60",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "100",
+    },
+    children: [...document.foodStates, ...document.operations].map(({ id }) => ({
+      id,
+      width: recipeNodeWidth,
+      height: recipeNodeHeight,
+    })),
+    edges: document.operations.flatMap((operation) => [
+      ...operation.inputs.map(({ foodStateId }, index) => ({
+        id: `${operation.id}:input:${index}`,
+        sources: [foodStateId],
+        targets: [operation.id],
+      })),
+      ...operation.outputs.map(({ foodStateId }, index) => ({
+        id: `${operation.id}:output:${index}`,
+        sources: [operation.id],
+        targets: [foodStateId],
+      })),
+    ]),
+  });
+  const positionById = new Map(
+    (layout.children ?? []).map((node) => [node.id, elkPosition(node)]),
+  );
 
-  const pending = new Set(candidate.operations.map(({ key }) => key));
-  while (pending.size > 0) {
-    let progressed = false;
-    for (const operation of candidate.operations) {
-      if (
-        !pending.has(operation.key) ||
-        operation.inputs.some(
-          ({ foodStateKey }) => !foodStateLayers.has(foodStateKey),
-        )
-      ) {
-        continue;
-      }
-
-      const inputLayer = Math.max(
-        ...operation.inputs.map(({ foodStateKey }) =>
-          requireValue(foodStateLayers, foodStateKey),
-        ),
-      );
-      for (const { foodStateKey } of operation.outputs) {
-        foodStateLayers.set(foodStateKey, inputLayer + 2);
-      }
-      pending.delete(operation.key);
-      progressed = true;
-    }
-
-    if (!progressed) {
-      throw new InvalidRecipeIngestionCandidateError([
-        "The candidate contains a cycle or an output that cannot be reached from a root food state.",
-      ]);
-    }
-  }
-
-  return foodStateLayers;
+  return {
+    ...document,
+    foodStates: document.foodStates.map((foodState) => ({
+      ...foodState,
+      position: requireValue(positionById, foodState.id),
+    })),
+    operations: document.operations.map((operation) => ({
+      ...operation,
+      position: requireValue(positionById, operation.id),
+    })),
+  };
 }
 
-function calculateOperationLayers(
-  candidate: RecipeIngestionCandidate,
-  foodStateLayers: ReadonlyMap<string, number>,
-): Map<string, number> {
-  return new Map(
-    candidate.operations.map((operation) => [
-      operation.key,
-      Math.max(
-        ...operation.inputs.map(({ foodStateKey }) =>
-          requireValue(foodStateLayers, foodStateKey),
-        ),
-      ) + 1,
-    ]),
-  );
+function elkPosition(node: ElkNode): { x: number; y: number } {
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+    throw new InvalidRecipeIngestionCandidateError([
+      `ELK did not produce a position for node "${node.id}".`,
+    ]);
+  }
+
+  return {
+    x: node.x as number,
+    y: (node.y as number) + recipeNodeHeight / 2,
+  };
 }
 
 function normalizeConnection(

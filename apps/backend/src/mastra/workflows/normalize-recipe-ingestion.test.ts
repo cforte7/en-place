@@ -81,35 +81,35 @@ function makeCandidate(): RecipeIngestionCandidate {
 }
 
 describe("normalizeRecipeIngestionCandidate", () => {
-  test("resolves symbolic references into a valid, topologically laid-out document", () => {
+  test("resolves symbolic references into a valid, topologically laid-out document", async () => {
     let nextId = 0;
-    const preview = normalizeRecipeIngestionCandidate(makeCandidate(), () =>
-      `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`,
+    const preview = await normalizeRecipeIngestionCandidate(
+      makeCandidate(),
+      () =>
+        `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`,
     );
 
     expect(validateRecipeDocument(preview.recipe).valid).toBeTrue();
     expect(preview.warnings).toEqual(["Heat level is qualitative."]);
-    expect(
-      Object.fromEntries(
-        preview.recipe.foodStates.map(({ name, position }) => [
-          name,
-          position.x,
-        ]),
+
+    const positionByName = new Map(
+      [...preview.recipe.foodStates, ...preview.recipe.operations].map(
+        ({ name, position }) => [name, position],
       ),
-    ).toEqual({
-      "raw onion": 0,
-      "olive oil": 0,
-      "diced onion": 560,
-      "sauteed onion": 1120,
-    });
-    expect(
-      Object.fromEntries(
-        preview.recipe.operations.map(({ name, position }) => [
-          name,
-          position.x,
-        ]),
-      ),
-    ).toEqual({ "Saute onion": 840, "Dice onion": 280 });
+    );
+    const rawOnion = positionByName.get("raw onion")!;
+    const oil = positionByName.get("olive oil")!;
+    const diceOnion = positionByName.get("Dice onion")!;
+    const dicedOnion = positionByName.get("diced onion")!;
+    const sauteOnion = positionByName.get("Saute onion")!;
+    const sauteedOnion = positionByName.get("sauteed onion")!;
+
+    expect(rawOnion.x).toBeLessThan(diceOnion.x);
+    expect(diceOnion.x).toBeLessThan(dicedOnion.x);
+    expect(dicedOnion.x).toBeLessThan(sauteOnion.x);
+    expect(oil.x).toBeLessThan(sauteOnion.x);
+    expect(sauteOnion.x).toBeLessThan(sauteedOnion.x);
+    expect(rawOnion.y).not.toBe(oil.y);
     expect(preview.recipe.operations[0]?.inputs[1]).toMatchObject({
       quantity: "15",
       unit: "ml",
@@ -120,16 +120,16 @@ describe("normalizeRecipeIngestionCandidate", () => {
     });
   });
 
-  test("rejects unresolved food-state references before creating a document", () => {
+  test("rejects unresolved food-state references before creating a document", async () => {
     const candidate = makeCandidate();
     candidate.operations[0]!.inputs[0]!.foodStateKey = "missing-onion";
 
-    expect(() => normalizeRecipeIngestionCandidate(candidate)).toThrow(
+    await expect(normalizeRecipeIngestionCandidate(candidate)).rejects.toThrow(
       InvalidRecipeIngestionCandidateError,
     );
   });
 
-  test("rejects candidates whose dependencies contain a cycle", () => {
+  test("rejects candidates whose dependencies contain a cycle", async () => {
     const candidate = makeCandidate();
     candidate.operations = [
       {
@@ -174,8 +174,8 @@ describe("normalizeRecipeIngestionCandidate", () => {
       },
     ];
 
-    expect(() => normalizeRecipeIngestionCandidate(candidate)).toThrow(
-      /cycle or an output that cannot be reached/,
+    await expect(normalizeRecipeIngestionCandidate(candidate)).rejects.toThrow(
+      /cycle/i,
     );
   });
 });
