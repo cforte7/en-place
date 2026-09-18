@@ -4,6 +4,8 @@ import type {
   CreateUserRequest,
   LoginRequest,
   RecipeDocument,
+  RecipeIngestionPreview,
+  RecipeIngestionRequest,
   RecipeListResponse,
   SavedRecipeDocument,
   UserResponse,
@@ -62,6 +64,13 @@ export function listRecipes() {
 
 export function createRecipe(input: RecipeDocument) {
   return request<SavedRecipeDocument>("/recipes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function previewRecipeImport(input: RecipeIngestionRequest) {
+  return request<RecipeIngestionPreview>("/recipe-imports/preview", {
     method: "POST",
     body: JSON.stringify(input),
   });

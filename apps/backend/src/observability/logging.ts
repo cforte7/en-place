@@ -52,3 +52,7 @@ export const authLogger = getLogger(["en-place", "auth"]);
 export const httpLogger = getLogger(["en-place", "http"]);
 export const usersLogger = getLogger(["en-place", "users"]);
 export const recipesLogger = getLogger(["en-place", "recipes"]);
+export const recipeIngestionLogger = getLogger([
+  "en-place",
+  "recipe-ingestion",
+]);

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  recipeDocumentSchema,
+  recipeOperationDocumentSchema,
   validateRecipeDocument,
   type RecipeDocument,
   type RecipeDocumentValidationError,
@@ -13,7 +15,7 @@ const prepareId = "00000000-0000-4000-8000-000000000101";
 const cookId = "00000000-0000-4000-8000-000000000102";
 
 function makeDocument(): RecipeDocument {
-  return {
+  return recipeDocumentSchema.parse({
     name: "Roasted ingredient",
     foodStates: [
       { id: rawId, name: "Raw", position: { x: 10.25, y: 20.5 } },
@@ -36,7 +38,7 @@ function makeDocument(): RecipeDocument {
         outputs: [{ foodStateId: cookedId }],
       },
     ],
-  };
+  });
 }
 
 function errorCodes(document: unknown): RecipeDocumentValidationError["code"][] {
@@ -56,8 +58,18 @@ describe("validateRecipeDocument", () => {
     const document = makeDocument();
     document.operations[0]!.inputs = [];
     document.operations[0]!.outputs = [
-      { foodStateId: "00000000-0000-4000-8000-000000000999" },
-      { foodStateId: "00000000-0000-4000-8000-000000000999" },
+      {
+        foodStateId: "00000000-0000-4000-8000-000000000999",
+        quantity: null,
+        unit: null,
+        metadata: {},
+      },
+      {
+        foodStateId: "00000000-0000-4000-8000-000000000999",
+        quantity: null,
+        unit: null,
+        metadata: {},
+      },
     ];
 
     expect(errorCodes(document)).toEqual(
@@ -71,20 +83,24 @@ describe("validateRecipeDocument", () => {
 
   test("rejects cycles and multiple producers", () => {
     const document = makeDocument();
-    document.operations.push({
-      id: "00000000-0000-4000-8000-000000000103",
-      type: "Undo",
-      position: { x: 750, y: 20.5 },
-      inputs: [{ foodStateId: cookedId }],
-      outputs: [{ foodStateId: rawId }],
-    });
-    document.operations.push({
-      id: "00000000-0000-4000-8000-000000000104",
-      type: "Alternative",
-      position: { x: 450, y: 200 },
-      inputs: [{ foodStateId: preparedId }],
-      outputs: [{ foodStateId: cookedId }],
-    });
+    document.operations.push(
+      recipeOperationDocumentSchema.parse({
+        id: "00000000-0000-4000-8000-000000000103",
+        type: "Undo",
+        position: { x: 750, y: 20.5 },
+        inputs: [{ foodStateId: cookedId }],
+        outputs: [{ foodStateId: rawId }],
+      }),
+    );
+    document.operations.push(
+      recipeOperationDocumentSchema.parse({
+        id: "00000000-0000-4000-8000-000000000104",
+        type: "Alternative",
+        position: { x: 450, y: 200 },
+        inputs: [{ foodStateId: preparedId }],
+        outputs: [{ foodStateId: cookedId }],
+      }),
+    );
 
     expect(errorCodes(document)).toEqual(
       expect.arrayContaining(["CYCLE_DETECTED", "MULTIPLE_PRODUCERS"]),

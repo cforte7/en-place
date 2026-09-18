@@ -64,6 +64,7 @@ export const apiErrorSchema = z.object({
       "invalid_credentials",
       "unauthorized",
       "not_found",
+      "recipe_ingestion_unavailable",
       "internal_error",
     ]),
     message: z.string(),
@@ -73,6 +74,16 @@ export const apiErrorSchema = z.object({
 export type ApiError = z.infer<typeof apiErrorSchema>;
 
 const recipeEntityIdSchema = z.uuid();
+const recipeMetadataSchema = z.record(z.string(), z.unknown());
+const nullableRecipeTextSchema = (maximumLength: number) =>
+  z.string().trim().min(1).max(maximumLength).nullable().default(null);
+const recipeQuantitySchema = z
+  .string()
+  .trim()
+  .regex(
+    /^(?:0*[1-9]\d*(?:\.\d*)?|0*\.\d*[1-9]\d*)$/,
+    "Quantity must be a positive decimal string.",
+  );
 
 export const recipeNodePositionSchema = z
   .object({
@@ -85,6 +96,8 @@ export const recipeFoodStateDocumentSchema = z
   .object({
     id: recipeEntityIdSchema,
     name: z.string().trim().min(1).max(200),
+    description: nullableRecipeTextSchema(2_000),
+    metadata: recipeMetadataSchema.default({}),
     position: recipeNodePositionSchema,
   })
   .strict();
@@ -92,6 +105,9 @@ export const recipeFoodStateDocumentSchema = z
 export const recipeOperationConnectionDocumentSchema = z
   .object({
     foodStateId: recipeEntityIdSchema,
+    quantity: recipeQuantitySchema.nullable().default(null),
+    unit: nullableRecipeTextSchema(100),
+    metadata: recipeMetadataSchema.default({}),
   })
   .strict();
 
@@ -99,6 +115,10 @@ export const recipeOperationDocumentSchema = z
   .object({
     id: recipeEntityIdSchema,
     type: z.string().trim().min(1).max(200),
+    name: nullableRecipeTextSchema(200),
+    instructions: nullableRecipeTextSchema(10_000),
+    estimatedDurationSeconds: z.int().nonnegative().nullable().default(null),
+    config: recipeMetadataSchema.default({}),
     position: recipeNodePositionSchema,
     inputs: z.array(recipeOperationConnectionDocumentSchema),
     outputs: z.array(recipeOperationConnectionDocumentSchema),
@@ -108,12 +128,121 @@ export const recipeOperationDocumentSchema = z
 export const recipeDocumentSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
+    description: nullableRecipeTextSchema(5_000),
     foodStates: z.array(recipeFoodStateDocumentSchema),
     operations: z.array(recipeOperationDocumentSchema),
   })
   .strict();
 
 export type RecipeDocument = z.infer<typeof recipeDocumentSchema>;
+
+export const recipeIngestionRequestSchema = z
+  .object({
+    sourceText: z.string().trim().min(1).max(50_000),
+  })
+  .strict();
+
+export type RecipeIngestionRequest = z.infer<
+  typeof recipeIngestionRequestSchema
+>;
+
+const recipeIngestionEntityKeySchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Keys must contain lowercase letters, numbers, and single hyphens.",
+  );
+
+export const recipeIngestionCandidateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().trim().min(1).max(5_000).nullable(),
+    foodStates: z
+      .array(
+        z
+          .object({
+            key: recipeIngestionEntityKeySchema,
+            name: z.string().trim().min(1).max(200),
+            description: z.string().trim().min(1).max(2_000).nullable(),
+          })
+          .strict(),
+      )
+      .min(1),
+    operations: z
+      .array(
+        z
+          .object({
+            key: recipeIngestionEntityKeySchema,
+            type: z.enum([
+              "prepare",
+              "combine",
+              "cook",
+              "rest",
+              "serve",
+              "other",
+            ]),
+            name: z.string().trim().min(1).max(200).nullable(),
+            instructions: z.string().trim().min(1).max(10_000),
+            estimatedDurationSeconds: z.int().nonnegative().nullable(),
+            inputs: z
+              .array(
+                z
+                  .object({
+                    foodStateKey: recipeIngestionEntityKeySchema,
+                    quantity: recipeQuantitySchema.nullable(),
+                    sourceQuantityText: z
+                      .string()
+                      .trim()
+                      .min(1)
+                      .max(100)
+                      .nullable(),
+                    unit: z.string().trim().min(1).max(100).nullable(),
+                  })
+                  .strict(),
+              )
+              .min(1),
+            outputs: z
+              .array(
+                z
+                  .object({
+                    foodStateKey: recipeIngestionEntityKeySchema,
+                    quantity: recipeQuantitySchema.nullable(),
+                    sourceQuantityText: z
+                      .string()
+                      .trim()
+                      .min(1)
+                      .max(100)
+                      .nullable(),
+                    unit: z.string().trim().min(1).max(100).nullable(),
+                  })
+                  .strict(),
+              )
+              .min(1),
+            sourceStepNumbers: z.array(z.int().positive()).min(1),
+          })
+          .strict(),
+      )
+      .min(1),
+    warnings: z.array(z.string().trim().min(1).max(1_000)),
+  })
+  .strict();
+
+export type RecipeIngestionCandidate = z.infer<
+  typeof recipeIngestionCandidateSchema
+>;
+
+export const recipeIngestionPreviewSchema = z
+  .object({
+    recipe: recipeDocumentSchema,
+    warnings: z.array(z.string().trim().min(1).max(1_000)),
+  })
+  .strict();
+
+export type RecipeIngestionPreview = z.infer<
+  typeof recipeIngestionPreviewSchema
+>;
 
 export const savedRecipeDocumentSchema = recipeDocumentSchema.extend({
   id: z.uuid(),

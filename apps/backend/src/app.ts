@@ -8,6 +8,7 @@ import { requestId } from "hono/request-id";
 import type { AppEnvironment } from "./http/environment";
 import { requestLogging } from "./http/request-logging";
 import { registerAuthRoutes } from "./modules/auth/routes";
+import { registerRecipeImportRoutes } from "./modules/recipe-imports/routes";
 import { registerRecipeRoutes } from "./modules/recipes/routes";
 import { registerUserRoutes } from "./modules/users/routes";
 import { httpLogger } from "./observability/logging";
@@ -59,6 +60,7 @@ app.use("*", requestLogging);
 app.openapi(healthRoute, (context) => context.json(health, 200));
 registerUserRoutes(app);
 registerAuthRoutes(app);
+registerRecipeImportRoutes(app);
 registerRecipeRoutes(app);
 
 export const openApiDocumentConfig = {

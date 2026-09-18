@@ -37,16 +37,31 @@ import {
 } from "@xyflow/react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { createRecipe, getRecipe, updateRecipe } from "./api";
+import {
+  createRecipe,
+  getRecipe,
+  previewRecipeImport,
+  updateRecipe,
+} from "./api";
 
 type RecipeNodeData = {
   label: string;
+  description?: string | null;
+  metadata?: Record<string, unknown>;
+  name?: string | null;
+  instructions?: string | null;
+  estimatedDurationSeconds?: number | null;
+  config?: Record<string, unknown>;
 };
 
 type FoodStateNode = Node<RecipeNodeData, "foodState">;
 type OperationNode = Node<RecipeNodeData, "operation">;
 type RecipeNode = FoodStateNode | OperationNode;
-type RecipeEdge = Edge<Record<string, never>, "smoothstep">;
+type RecipeConnection = RecipeDocument["operations"][number]["inputs"][number];
+type RecipeEdge = Edge<
+  Pick<RecipeConnection, "quantity" | "unit" | "metadata">,
+  "smoothstep"
+>;
 type NodeType = RecipeNode["type"];
 
 type RecipeNodeOptions = {
@@ -54,6 +69,7 @@ type RecipeNodeOptions = {
   type: NodeType;
   position: RecipeNode["position"];
   label?: string;
+  details?: Omit<RecipeNodeData, "label">;
 };
 
 type RecipeEdgeEndpoints = Pick<Connection, "source" | "target"> &
@@ -66,6 +82,7 @@ function createRecipeNode({
   type,
   position,
   label,
+  details,
 }: RecipeNodeOptions): RecipeNode {
   const node = {
     id,
@@ -73,6 +90,7 @@ function createRecipeNode({
     origin: recipeNodeOrigin,
     data: {
       label: label ?? (type === "foodState" ? "New ingredient" : "New step"),
+      ...details,
     },
   };
 
@@ -81,12 +99,16 @@ function createRecipeNode({
     : ({ ...node, type } satisfies OperationNode);
 }
 
-function createRecipeEdge(endpoints: RecipeEdgeEndpoints): RecipeEdge {
+function createRecipeEdge(
+  endpoints: RecipeEdgeEndpoints,
+  connection?: Omit<RecipeConnection, "foodStateId">,
+): RecipeEdge {
   return {
     id: `${endpoints.source}-${endpoints.target}`,
     ...endpoints,
     type: "smoothstep",
     markerEnd: { type: MarkerType.ArrowClosed },
+    data: connection ?? { quantity: null, unit: null, metadata: {} },
   };
 }
 
@@ -198,8 +220,11 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
     : createInitialGraph(),
   ).current;
   const [recipeName, setRecipeName] = useState("Untitled recipe");
+  const [recipeDescription, setRecipeDescription] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] =
     useNodesState<RecipeNode>(initialGraph.nodes);
+  const [recipeSourceText, setRecipeSourceText] = useState("");
+  const [ingestionWarnings, setIngestionWarnings] = useState<string[]>([]);
   const [edges, setEdges, onEdgesChange] =
     useEdgesState<RecipeEdge>(initialGraph.edges);
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
@@ -230,6 +255,7 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
 
     const flowGraph = toFlowGraph(loadedRecipe.data);
     setRecipeName(loadedRecipe.data.name);
+    setRecipeDescription(loadedRecipe.data.description);
     setNodes(flowGraph.nodes);
     setEdges(flowGraph.edges);
     setSavedFingerprint(documentFingerprint(toRecipeDocument(loadedRecipe.data)));
@@ -243,8 +269,8 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
   ]);
 
   const document = useMemo(
-    () => buildRecipeDocument(recipeName, nodes, edges),
-    [edges, nodes, recipeName],
+    () => buildRecipeDocument(recipeName, recipeDescription, nodes, edges),
+    [edges, nodes, recipeDescription, recipeName],
   );
   const validation = useMemo(
     () => validateRecipeDocument(document),
@@ -262,12 +288,24 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
       const flowGraph = toFlowGraph(savedRecipe);
       queryClient.setQueryData(["recipe", savedRecipe.id], savedRecipe);
       setRecipeName(savedRecipe.name);
+      setRecipeDescription(savedRecipe.description);
       setNodes(flowGraph.nodes);
       setEdges(flowGraph.edges);
       setSavedFingerprint(documentFingerprint(savedDocument));
       if (!recipeId) {
         navigate(`/recipes/${savedRecipe.id}`, { replace: true });
       }
+    },
+  });
+  const recipeImport = useMutation({
+    mutationFn: () => previewRecipeImport({ sourceText: recipeSourceText }),
+    onSuccess: (preview) => {
+      const flowGraph = toFlowGraph(preview.recipe);
+      setRecipeName(preview.recipe.name);
+      setRecipeDescription(preview.recipe.description);
+      setNodes(flowGraph.nodes);
+      setEdges(flowGraph.edges);
+      setIngestionWarnings(preview.warnings);
     },
   });
 
@@ -419,6 +457,19 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
             maxLength={200}
           />
         </label>
+        <label className="recipe-name-field" htmlFor="recipe-description">
+          <span>Description</span>
+          <input
+            id="recipe-description"
+            value={recipeDescription ?? ""}
+            onChange={(event) =>
+              setRecipeDescription(
+                event.target.value.trim() ? event.target.value : null,
+              )
+            }
+            maxLength={5_000}
+          />
+        </label>
         <div className="recipe-save-controls">
           <p
             className={`draft-status${invalidReason ? " draft-status--invalid" : ""}`}
@@ -468,6 +519,47 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
           </button>
         </div>
       </div>
+      <details className="recipe-import">
+        <summary>Import a written recipe</summary>
+        <div className="recipe-import__body">
+          <label htmlFor="recipe-source">
+            Recipe text
+            <textarea
+              id="recipe-source"
+              value={recipeSourceText}
+              onChange={(event) => setRecipeSourceText(event.target.value)}
+              maxLength={50_000}
+              rows={8}
+              placeholder="Paste ingredients and instructions here."
+            />
+          </label>
+          {recipeImport.error && (
+            <p className="form-error" role="alert">
+              {recipeImport.error.message}
+            </p>
+          )}
+          {ingestionWarnings.length > 0 && (
+            <div className="recipe-import__warnings" role="status">
+              <strong>Review these assumptions</strong>
+              <ul>
+                {ingestionWarnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <button
+            className="primary-button"
+            type="button"
+            disabled={
+              recipeSourceText.trim().length === 0 || recipeImport.isPending
+            }
+            onClick={() => recipeImport.mutate()}
+          >
+            {recipeImport.isPending ? "Converting…" : "Create preview"}
+          </button>
+        </div>
+      </details>
 
       <div className="recipe-canvas" ref={canvasRef}>
         <RecipeNodeLabelContext.Provider value={updateNodeLabel}>
@@ -514,26 +606,40 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
 
 function buildRecipeDocument(
   name: string,
+  description: string | null,
   nodes: RecipeNode[],
   edges: RecipeEdge[],
 ): RecipeDocument {
   return {
     name,
+    description,
     foodStates: nodes.filter(isFoodStateNode).map((node) => ({
       id: node.id,
       name: node.data.label,
+      description: node.data.description ?? null,
+      metadata: node.data.metadata ?? {},
       position: node.position,
     })),
     operations: nodes.filter(isOperationNode).map((node) => ({
       id: node.id,
       type: node.data.label,
+      name: node.data.name ?? null,
+      instructions: node.data.instructions ?? null,
+      estimatedDurationSeconds: node.data.estimatedDurationSeconds ?? null,
+      config: node.data.config ?? {},
       position: node.position,
       inputs: edges
         .filter((edge) => edge.target === node.id)
-        .map(({ source }) => ({ foodStateId: source })),
+        .map((edge) => ({
+          foodStateId: edge.source,
+          ...recipeConnectionDetails(edge),
+        })),
       outputs: edges
         .filter((edge) => edge.source === node.id)
-        .map(({ target }) => ({ foodStateId: target })),
+        .map((edge) => ({
+          foodStateId: edge.target,
+          ...recipeConnectionDetails(edge),
+        })),
     })),
   };
 }
@@ -555,6 +661,10 @@ function toFlowGraph(
           type: "foodState",
           position: foodState.position,
           label: foodState.name,
+          details: {
+            description: foodState.description,
+            metadata: foodState.metadata,
+          },
         }),
       ),
       ...recipe.operations.map((operation) =>
@@ -563,18 +673,36 @@ function toFlowGraph(
           type: "operation",
           position: operation.position,
           label: operation.type,
+          details: {
+            name: operation.name,
+            instructions: operation.instructions,
+            estimatedDurationSeconds: operation.estimatedDurationSeconds,
+            config: operation.config,
+          },
         }),
       ),
     ],
     edges: recipe.operations.flatMap((operation) => [
-      ...operation.inputs.map(({ foodStateId }) =>
-        createRecipeEdge({ source: foodStateId, target: operation.id }),
+      ...operation.inputs.map(({ foodStateId, ...connection }) =>
+        createRecipeEdge(
+          { source: foodStateId, target: operation.id },
+          connection,
+        ),
       ),
-      ...operation.outputs.map(({ foodStateId }) =>
-        createRecipeEdge({ source: operation.id, target: foodStateId }),
+      ...operation.outputs.map(({ foodStateId, ...connection }) =>
+        createRecipeEdge(
+          { source: operation.id, target: foodStateId },
+          connection,
+        ),
       ),
     ]),
   };
+}
+
+function recipeConnectionDetails(
+  edge: RecipeEdge,
+): Omit<RecipeConnection, "foodStateId"> {
+  return edge.data ?? { quantity: null, unit: null, metadata: {} };
 }
 
 function documentFingerprint(document: RecipeDocument): string {

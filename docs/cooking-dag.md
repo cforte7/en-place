@@ -35,8 +35,10 @@ The induced food-state dependencies are `A -> C` and `B -> C`.
 | Transaction-scoped graph loading and SQL mutations | `apps/backend/src/modules/recipes/recipe-graph-repository.ts` |
 | Traversal, indexing, cycle detection, and validation | `apps/backend/src/modules/recipes/recipe-graph.ts` |
 | Transactional mutation boundary | `apps/backend/src/modules/recipes/recipe-graph-service.ts` |
-| Authenticated recipe HTTP routes | `apps/backend/src/modules/recipes/routes.ts` |
-| Shared save document and client-safe validation | `packages/contracts/src/index.ts` |
+| Authenticated recipe HTTP routes | `apps/backend/src/modules/recipes/routes/` |
+| Shared save and ingestion documents with client-safe validation | `packages/contracts/src/index.ts` |
+| Recipe ingestion agent and workflow | `apps/backend/src/mastra/` |
+| Authenticated ingestion preview route | `apps/backend/src/modules/recipe-imports/` |
 | Domain tests | `apps/backend/src/modules/recipes/recipe-graph.test.ts` |
 | PostgreSQL integration tests | `apps/backend/src/modules/recipes/recipe-graph.integration.test.ts` |
 
@@ -167,11 +169,22 @@ When `position` is omitted, set operations assign array order and add operations
 
 ### Whole-document save
 
-The browser persists a valid working graph through authenticated `POST /recipes` and `PUT /recipes/{recipeId}` requests. Node IDs are client-generated UUIDs. The shared `RecipeDocument` contract groups inputs and outputs under each operation and stores graph coordinates for every food state and operation.
+The browser persists a valid working graph through authenticated `POST /recipes` and `PUT /recipes/{recipeId}` requests. Node IDs are client-generated UUIDs. The shared `RecipeDocument` contract groups inputs and outputs under each operation; carries recipe and food-state descriptions, operation instructions and durations, connection quantities and units, and JSON metadata/config; and stores graph coordinates for every food state and operation.
 
-`create` writes the recipe and its complete graph in one transaction. `replace` acquires the recipe advisory lock, verifies ownership, replaces all graph rows, reloads the aggregate, and validates it before commit. Invalid replacements roll back without changing the previously saved graph. `GET /recipes/{recipeId}` loads the owner-scoped aggregate and returns the same document shape so the frontend can restore topology and node positions.
+`create` writes the recipe and its complete graph in one transaction. `replace` acquires the recipe advisory lock, verifies ownership, replaces all graph rows, reloads the aggregate, and validates it before commit. Invalid replacements roll back without changing the previously saved graph. `GET /recipes/{recipeId}` loads the owner-scoped aggregate and returns the same document shape so the frontend can restore all persisted recipe details, topology, and node positions.
 
 All React Flow nodes use the same origin. Persisted coordinates are graph coordinates; viewport zoom, pan, selection, and undo history are not persisted.
+
+### Written recipe ingestion
+
+Authenticated `POST /recipe-imports/preview` accepts conventional recipe text and returns an unsaved `RecipeDocument` plus warnings. It never writes recipe rows. The browser loads the preview into the recipe builder, and the user must explicitly save through the ordinary recipe mutation boundary.
+
+The Mastra workflow has two steps:
+
+1. The recipe ingestion agent extracts a structured candidate with symbolic food-state keys, broad operation types, source step references, and explicit warnings for ambiguity.
+2. Deterministic application code resolves keys to UUIDs, assigns topological graph positions, preserves source quantity text in connection metadata when needed, and runs `validateRecipeDocument`.
+
+The model does not generate database identifiers or graph coordinates and has no persistence tools. Configure its model with `RECIPE_INGESTION_MODEL`; the default is `openai/gpt-5-mini`, which requires `OPENAI_API_KEY`. `RECIPE_INGESTION_TIMEOUT_MS` controls the per-model-call timeout and defaults to 180 seconds.
 
 ### Transaction and locking protocol
 

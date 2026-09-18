@@ -150,10 +150,14 @@ export class RecipeGraphRepository {
     };
   }
 
-  async createRecipe(ownerId: UserId, name: string): Promise<Recipe> {
+  async createRecipe(
+    ownerId: UserId,
+    name: string,
+    description: string | null,
+  ): Promise<Recipe> {
     const [recipe] = await this.transaction
       .insert(recipes)
-      .values({ ownerId, name })
+      .values({ ownerId, name, description })
       .returning();
     return requireRow(recipe, "Failed to create recipe");
   }
@@ -162,10 +166,11 @@ export class RecipeGraphRepository {
     ownerId: UserId,
     recipeId: string,
     name: string,
+    description: string | null,
   ): Promise<Recipe | null> {
     const [recipe] = await this.transaction
       .update(recipes)
-      .set({ name, updatedAt: new Date() })
+      .set({ name, description, updatedAt: new Date() })
       .where(and(eq(recipes.id, recipeId), eq(recipes.ownerId, ownerId)))
       .returning();
     return recipe ?? null;
@@ -188,6 +193,8 @@ export class RecipeGraphRepository {
           id: foodState.id,
           recipeId,
           name: foodState.name,
+          description: foodState.description,
+          metadata: foodState.metadata,
           positionX: foodState.position.x,
           positionY: foodState.position.y,
         })),
@@ -203,17 +210,24 @@ export class RecipeGraphRepository {
         id: operation.id,
         recipeId,
         type: operation.type,
+        name: operation.name,
+        instructions: operation.instructions,
+        estimatedDurationSeconds: operation.estimatedDurationSeconds,
+        config: operation.config,
         positionX: operation.position.x,
         positionY: operation.position.y,
       })),
     );
 
     const inputRows = document.operations.flatMap((operation) =>
-      operation.inputs.map(({ foodStateId }, position) => ({
+      operation.inputs.map((input, position) => ({
         recipeId,
         operationId: operation.id,
-        foodStateId,
+        foodStateId: input.foodStateId,
         position,
+        quantity: input.quantity,
+        unit: input.unit,
+        metadata: input.metadata,
       })),
     );
     if (inputRows.length > 0) {
@@ -221,11 +235,14 @@ export class RecipeGraphRepository {
     }
 
     const outputRows = document.operations.flatMap((operation) =>
-      operation.outputs.map(({ foodStateId }, position) => ({
+      operation.outputs.map((output, position) => ({
         recipeId,
         operationId: operation.id,
-        foodStateId,
+        foodStateId: output.foodStateId,
         position,
+        quantity: output.quantity,
+        unit: output.unit,
+        metadata: output.metadata,
       })),
     );
     if (outputRows.length > 0) {

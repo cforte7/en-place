@@ -6,7 +6,10 @@ import {
   expect,
   test,
 } from "bun:test";
-import type { RecipeDocument } from "@en-place/contracts";
+import {
+  recipeDocumentSchema,
+  type RecipeDocument,
+} from "@en-place/contracts";
 import { eq } from "drizzle-orm";
 
 import { database } from "../../database";
@@ -209,6 +212,7 @@ describe.serial("recipeGraphService", () => {
     const document = makeRecipeDocument("Position round trip");
     const created = await recipeGraphService.create(ownerId, document);
     createdRecipeIds.push(created.recipe.id);
+    expect(created.recipe.description).toBe("A persisted recipe description.");
 
     expect(created.foodStates).toHaveLength(document.foodStates.length);
     expect(created.foodStates).toEqual(
@@ -223,8 +227,17 @@ describe.serial("recipeGraphService", () => {
       ),
     );
     expect(created.operations[0]).toMatchObject({
+      name: "Cook ingredient",
+      instructions: "Cook until done.",
+      estimatedDurationSeconds: 300,
+      config: { heat: "medium" },
       positionX: 310.75,
       positionY: 20.5,
+    });
+    expect(created.inputs[0]).toMatchObject({
+      quantity: "2.5",
+      unit: "cups",
+      metadata: { sourceQuantityText: "2 1/2" },
     });
 
     const replacement: RecipeDocument = {
@@ -372,17 +385,22 @@ function makeRecipeDocument(name: string): RecipeDocument {
   const inputId = crypto.randomUUID();
   const outputId = crypto.randomUUID();
 
-  return {
+  return recipeDocumentSchema.parse({
     name,
+    description: "A persisted recipe description.",
     foodStates: [
       {
         id: inputId,
         name: "Raw",
+        description: "Uncooked ingredient.",
+        metadata: { source: "fixture" },
         position: { x: 10.25, y: 20.5 },
       },
       {
         id: outputId,
         name: "Cooked",
+        description: "Cooked ingredient.",
+        metadata: {},
         position: { x: 610.125, y: 20.5 },
       },
     ],
@@ -390,10 +408,21 @@ function makeRecipeDocument(name: string): RecipeDocument {
       {
         id: crypto.randomUUID(),
         type: "Cook",
+        name: "Cook ingredient",
+        instructions: "Cook until done.",
+        estimatedDurationSeconds: 300,
+        config: { heat: "medium" },
         position: { x: 310.75, y: 20.5 },
-        inputs: [{ foodStateId: inputId }],
+        inputs: [
+          {
+            foodStateId: inputId,
+            quantity: "2.5",
+            unit: "cups",
+            metadata: { sourceQuantityText: "2 1/2" },
+          },
+        ],
         outputs: [{ foodStateId: outputId }],
       },
     ],
-  };
+  });
 }

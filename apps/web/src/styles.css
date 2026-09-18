@@ -469,7 +469,7 @@ button:disabled {
 
 .recipe-builder {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   height: 100%;
   min-height: 600px;
   background: #eeece3;
@@ -654,6 +654,62 @@ button:disabled {
 
 .add-node-button--operation:hover {
   background: #f2d9cd;
+}
+
+.recipe-import {
+  padding: 10px clamp(20px, 4vw, 52px);
+  border-top: 1px solid rgb(39 53 43 / 10%);
+  background: #fffdf8;
+}
+
+.recipe-import summary {
+  width: fit-content;
+  color: #8f4128;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.recipe-import__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px 18px;
+  padding: 14px 0 4px;
+}
+
+.recipe-import__body label {
+  display: grid;
+  gap: 6px;
+  color: #555d54;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.recipe-import__body textarea {
+  width: 100%;
+  max-height: 220px;
+  resize: vertical;
+}
+
+.recipe-import__body .primary-button {
+  min-width: 150px;
+  margin: 0;
+}
+
+.recipe-import__body .form-error,
+.recipe-import__warnings {
+  grid-column: 1 / -1;
+}
+
+.recipe-import__warnings {
+  color: #7b4b29;
+  font-size: 0.82rem;
+}
+
+.recipe-import__warnings ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
 }
 
 .recipe-canvas {

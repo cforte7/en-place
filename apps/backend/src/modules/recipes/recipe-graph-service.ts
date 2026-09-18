@@ -84,7 +84,11 @@ class RecipeGraphService {
 
     return database.transaction(async (transaction) => {
       const repository = new RecipeGraphRepository(transaction);
-      const recipe = await repository.createRecipe(ownerId, document.name);
+      const recipe = await repository.createRecipe(
+        ownerId,
+        document.name,
+        document.description,
+      );
       await repository.replaceRecipeGraphRows(recipe.id, document);
       return requireValidPersistedGraph(repository, recipe.id);
     });
@@ -113,6 +117,7 @@ class RecipeGraphService {
         ownerId,
         recipeId,
         document.name,
+        document.description,
       );
       if (!recipe) {
         throw new RecipeGraphNotFoundError(recipeId);
