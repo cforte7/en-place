@@ -1,11 +1,11 @@
 import {
-  recipeIngestionCandidateSchema,
   recipeIngestionPreviewSchema,
   recipeIngestionRequestSchema,
 } from "@en-place/contracts";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
+import { recipeIngestionCandidateSchema } from "./recipe-ingestion-schemas";
 import { normalizeRecipeIngestionCandidate } from "./normalize-recipe-ingestion";
 
 export const recipeIngestionRequestContextSchema = z.object({

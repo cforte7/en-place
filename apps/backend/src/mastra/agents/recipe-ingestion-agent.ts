@@ -1,5 +1,6 @@
-import { recipeIngestionCandidateSchema } from "@en-place/contracts";
 import { Agent } from "@mastra/core/agent";
+
+import { recipeIngestionCandidateSchema } from "../workflows/recipe-ingestion-schemas";
 
 const model = (Bun.env.RECIPE_INGESTION_MODEL ??
   "openai/gpt-5.6-terra") as `${string}/${string}`;

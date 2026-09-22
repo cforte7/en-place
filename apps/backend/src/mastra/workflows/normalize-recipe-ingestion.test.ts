@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { validateRecipeDocument } from "@en-place/contracts";
+
 import {
   recipeIngestionCandidateSchema,
-  validateRecipeDocument,
   type RecipeIngestionCandidate,
-} from "@en-place/contracts";
-
+} from "./recipe-ingestion-schemas";
 import {
   InvalidRecipeIngestionCandidateError,
   normalizeRecipeIngestionCandidate,

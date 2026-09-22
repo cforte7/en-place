@@ -4,9 +4,10 @@ import {
   recipeDocumentSchema,
   validateRecipeDocument,
   type RecipeDocument,
-  type RecipeIngestionCandidate,
   type RecipeIngestionPreview,
 } from "@en-place/contracts";
+
+import type { RecipeIngestionCandidate } from "./recipe-ingestion-schemas";
 
 const recipeNodeWidth = 220;
 const recipeNodeHeight = 116;
