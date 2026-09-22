@@ -17,6 +17,7 @@
         "@hono/zod-openapi": "^1.6.3",
         "@logtape/logtape": "^2.3.4",
         "@mastra/core": "^1.67.0",
+        "@typesafe-ai/sdk": "^0.6.0",
         "drizzle-orm": "^1.0.0-rc.4",
         "elkjs": "^0.12.0",
         "hono": "^4.13.7",
@@ -233,6 +234,8 @@
     "@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
 
     "@types/unist": ["@types/unist@3.0.3", "", {}, "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="],
+
+    "@typesafe-ai/sdk": ["@typesafe-ai/sdk@0.6.0", "", {}, "sha512-IddX+Q0XM+VagOUZFeP7wZjaO4SHMdvnh2zEBdrZZnXedWI3BNK1lKhMx3ayrkFWvVLbVcUHJy6AVZlY+e6Jaw=="],
 
     "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
 
