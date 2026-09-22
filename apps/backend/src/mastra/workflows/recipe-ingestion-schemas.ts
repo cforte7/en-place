@@ -177,6 +177,28 @@ export const actionExtractionSchema = z
 
 export type ActionExtraction = z.infer<typeof actionExtractionSchema>;
 
+export const extractedRecipePartsSchema = z
+  .object({
+    source: preparedRecipeSourceSchema,
+    ingredientExtraction: ingredientExtractionSchema,
+    actionExtraction: actionExtractionSchema,
+  })
+  .strict();
+
+export type ExtractedRecipeParts = z.infer<typeof extractedRecipePartsSchema>;
+
+export const recipeIngestionRepairSchema = z
+  .object({
+    ingredientRevisions: z.array(ingredientExtractionItemSchema),
+    actionRevisions: z.array(actionExtractionItemSchema),
+    warnings: z.array(warningTextSchema),
+  })
+  .strict();
+
+export type RecipeIngestionRepair = z.infer<
+  typeof recipeIngestionRepairSchema
+>;
+
 export function createIngredientExtractionSchema(
   source: PreparedRecipeSource,
 ) {
