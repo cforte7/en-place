@@ -672,8 +672,8 @@ button:disabled {
 
 .recipe-import__body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 12px 18px;
   padding: 14px 0 4px;
 }
@@ -693,6 +693,7 @@ button:disabled {
 }
 
 .recipe-import__body .primary-button {
+  grid-column: 1 / -1;
   min-width: 150px;
   margin: 0;
 }
@@ -865,6 +866,10 @@ button:disabled {
     flex: 1;
     justify-content: center;
   }
+  .recipe-import__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
 }
 
 @media (max-width: 460px) {

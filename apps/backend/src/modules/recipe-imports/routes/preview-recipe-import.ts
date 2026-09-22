@@ -41,7 +41,7 @@ export const previewRecipeImportRoute = createRoute({
     },
     400: {
       content: { "application/json": { schema: apiErrorSchema } },
-      description: "The source recipe is invalid",
+      description: "The recipe ingestion request is invalid",
     },
     401: {
       content: { "application/json": { schema: apiErrorSchema } },

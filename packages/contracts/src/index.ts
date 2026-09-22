@@ -138,7 +138,10 @@ export type RecipeDocument = z.infer<typeof recipeDocumentSchema>;
 
 export const recipeIngestionRequestSchema = z
   .object({
-    sourceText: z.string().trim().min(1).max(50_000),
+    name: recipeDocumentSchema.shape.name,
+    description: z.string().trim().min(1).max(5_000).nullable(),
+    ingredientsText: z.string().trim().min(1).max(25_000),
+    instructionsText: z.string().trim().min(1).max(25_000),
   })
   .strict();
 
@@ -233,10 +236,38 @@ export type RecipeIngestionCandidate = z.infer<
   typeof recipeIngestionCandidateSchema
 >;
 
+export const recipeIngestionWarningSchema = z
+  .object({
+    code: z.enum([
+      "ambiguous_link",
+      "unused_ingredient",
+      "unlisted_ingredient",
+      "inexact_quantity",
+      "model_assumption",
+      "repair_applied",
+    ]),
+    message: z.string().trim().min(1).max(1_000),
+    operationId: recipeEntityIdSchema.nullable(),
+    foodStateId: recipeEntityIdSchema.nullable(),
+    alternatives: z.array(
+      z
+        .object({
+          foodStateId: recipeEntityIdSchema,
+          label: z.string().trim().min(1).max(200),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type RecipeIngestionWarning = z.infer<
+  typeof recipeIngestionWarningSchema
+>;
+
 export const recipeIngestionPreviewSchema = z
   .object({
     recipe: recipeDocumentSchema,
-    warnings: z.array(z.string().trim().min(1).max(1_000)),
+    warnings: z.array(recipeIngestionWarningSchema),
   })
   .strict();
 

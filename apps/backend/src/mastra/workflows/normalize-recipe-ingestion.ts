@@ -105,7 +105,13 @@ export async function normalizeRecipeIngestionCandidate(
 
   return {
     recipe: await layoutRecipeDocument(validation.document),
-    warnings: [...new Set(candidate.warnings)],
+    warnings: [...new Set(candidate.warnings)].map((message) => ({
+      code: "model_assumption",
+      message,
+      operationId: null,
+      foodStateId: null,
+      alternatives: [],
+    })),
   };
 }
 

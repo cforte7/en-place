@@ -90,7 +90,15 @@ describe("normalizeRecipeIngestionCandidate", () => {
     );
 
     expect(validateRecipeDocument(preview.recipe).valid).toBeTrue();
-    expect(preview.warnings).toEqual(["Heat level is qualitative."]);
+    expect(preview.warnings).toEqual([
+      {
+        code: "model_assumption",
+        message: "Heat level is qualitative.",
+        operationId: null,
+        foodStateId: null,
+        alternatives: [],
+      },
+    ]);
 
     const positionByName = new Map(
       [...preview.recipe.foodStates, ...preview.recipe.operations].map(

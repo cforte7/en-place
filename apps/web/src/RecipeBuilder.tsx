@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   validateRecipeDocument,
   type RecipeDocument,
+  type RecipeIngestionWarning,
   type SavedRecipeDocument,
 } from "@en-place/contracts";
 import {
@@ -223,8 +224,11 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
   const [recipeDescription, setRecipeDescription] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] =
     useNodesState<RecipeNode>(initialGraph.nodes);
-  const [recipeSourceText, setRecipeSourceText] = useState("");
-  const [ingestionWarnings, setIngestionWarnings] = useState<string[]>([]);
+  const [ingredientsText, setIngredientsText] = useState("");
+  const [instructionsText, setInstructionsText] = useState("");
+  const [ingestionWarnings, setIngestionWarnings] = useState<
+    RecipeIngestionWarning[]
+  >([]);
   const [edges, setEdges, onEdgesChange] =
     useEdgesState<RecipeEdge>(initialGraph.edges);
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
@@ -298,11 +302,15 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
     },
   });
   const recipeImport = useMutation({
-    mutationFn: () => previewRecipeImport({ sourceText: recipeSourceText }),
+    mutationFn: () =>
+      previewRecipeImport({
+        name: recipeName,
+        description: recipeDescription,
+        ingredientsText,
+        instructionsText,
+      }),
     onSuccess: (preview) => {
       const flowGraph = toFlowGraph(preview.recipe);
-      setRecipeName(preview.recipe.name);
-      setRecipeDescription(preview.recipe.description);
       setNodes(flowGraph.nodes);
       setEdges(flowGraph.edges);
       setIngestionWarnings(preview.warnings);
@@ -522,15 +530,26 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
       <details className="recipe-import">
         <summary>Import a written recipe</summary>
         <div className="recipe-import__body">
-          <label htmlFor="recipe-source">
-            Recipe text
+          <label htmlFor="recipe-ingredients">
+            Ingredients
             <textarea
-              id="recipe-source"
-              value={recipeSourceText}
-              onChange={(event) => setRecipeSourceText(event.target.value)}
-              maxLength={50_000}
+              id="recipe-ingredients"
+              value={ingredientsText}
+              onChange={(event) => setIngredientsText(event.target.value)}
+              maxLength={25_000}
+              rows={6}
+              placeholder="Paste the ingredient list here."
+            />
+          </label>
+          <label htmlFor="recipe-instructions">
+            Instructions
+            <textarea
+              id="recipe-instructions"
+              value={instructionsText}
+              onChange={(event) => setInstructionsText(event.target.value)}
+              maxLength={25_000}
               rows={8}
-              placeholder="Paste ingredients and instructions here."
+              placeholder="Paste the recipe instructions here."
             />
           </label>
           {recipeImport.error && (
@@ -543,7 +562,16 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
               <strong>Review these assumptions</strong>
               <ul>
                 {ingestionWarnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
+                  <li
+                    key={[
+                      warning.code,
+                      warning.operationId,
+                      warning.foodStateId,
+                      warning.message,
+                    ].join(":")}
+                  >
+                    {warning.message}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -552,7 +580,10 @@ function RecipeBuilder({ recipeId }: { recipeId?: string }) {
             className="primary-button"
             type="button"
             disabled={
-              recipeSourceText.trim().length === 0 || recipeImport.isPending
+              recipeName.trim().length === 0 ||
+              ingredientsText.trim().length === 0 ||
+              instructionsText.trim().length === 0 ||
+              recipeImport.isPending
             }
             onClick={() => recipeImport.mutate()}
           >

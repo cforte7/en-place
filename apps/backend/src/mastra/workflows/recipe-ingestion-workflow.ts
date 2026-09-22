@@ -19,13 +19,20 @@ export type RecipeIngestionRequestContext = z.infer<
 
 const extractRecipe = createStep({
   id: "extract-recipe",
-  description: "Extract a symbolic cooking graph from conventional recipe text",
+  description: "Extract a symbolic cooking graph from recipe ingredients and instructions",
   inputSchema: recipeIngestionRequestSchema,
   outputSchema: recipeIngestionCandidateSchema,
   execute: async ({ inputData, mastra, requestContext, abortSignal }) => {
     const agent = mastra.getAgent("recipeIngestionAgent");
     const response = await agent.generate(
-      JSON.stringify({ sourceRecipe: inputData.sourceText }),
+      JSON.stringify({
+        sourceRecipe: {
+          name: inputData.name,
+          description: inputData.description,
+          ingredients: inputData.ingredientsText,
+          instructions: inputData.instructionsText,
+        },
+      }),
       {
         requestContext,
         abortSignal,
@@ -36,7 +43,13 @@ const extractRecipe = createStep({
       throw new Error("Recipe ingestion agent returned no structured output");
     }
 
-    return response.object;
+    const candidate = recipeIngestionCandidateSchema.parse(response.object);
+
+    return {
+      ...candidate,
+      name: inputData.name,
+      description: inputData.description,
+    };
   },
 });
 
